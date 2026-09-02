@@ -289,9 +289,9 @@ void ui_Screen1_screen_init(void)
 
     ui_label_rpm_value = lv_label_create(ui_Screen1);
     lv_label_set_text(ui_label_rpm_value, "--");
-    lv_obj_set_style_text_font(ui_label_rpm_value, &lv_font_montserrat_44, 0);
+    lv_obj_set_style_text_font(ui_label_rpm_value, &ui_font_rpm_96, 0);
     lv_obj_set_style_text_color(ui_label_rpm_value, lv_color_white(), 0);
-    lv_obj_align(ui_label_rpm_value, LV_ALIGN_CENTER, 0, S(-78));
+    lv_obj_align(ui_label_rpm_value, LV_ALIGN_CENTER, 0, S(-75));
 
     // ---- Four sensor tiles ----
     ui_val_oil_psi  = make_tile(ui_Screen1, "OIL PSI",  S(-108), S(28));

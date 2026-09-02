@@ -62,6 +62,7 @@ idf_component_register(
         "tach_ui/ui.c"
         "tach_ui/screens/ui_Screen1.c"
         "tach_ui/images/ui_img_c5r.c"
+        "tach_ui/fonts/ui_font_rpm_96.c"
         "tach_ui/boot/boot_screen.c"
         "odometer/odometer.c"
         "canbus/canbus.c"

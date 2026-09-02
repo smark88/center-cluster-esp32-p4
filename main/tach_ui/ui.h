@@ -29,7 +29,10 @@ LV_IMG_DECLARE( ui_img_c5r);        // boot splash
 
 // FONTS
 // The dash uses the built-in Montserrat faces (enabled via sdkconfig) so the
-// type matches the flat, modern look of the gauge design.
+// type matches the flat, modern look of the gauge design. The big centre RPM
+// readout needs to be larger than the largest built-in (44), so it uses a
+// generated digits-only Montserrat cut -- see fonts/ui_font_rpm_96.c.
+LV_FONT_DECLARE( ui_font_rpm_96);
 
 // UI INIT
 void ui_init(void);
