@@ -52,7 +52,7 @@
 lv_obj_t *ui_Screen1 = NULL;
 lv_obj_t *ui_rpm_arc = NULL;
 lv_obj_t *ui_fuel_arc = NULL;
-lv_obj_t *ui_label_mph_value = NULL;
+lv_obj_t *ui_label_rpm_value = NULL;
 lv_obj_t *ui_label_odometer_value = NULL;
 lv_obj_t *ui_val_oil_psi = NULL;
 lv_obj_t *ui_val_water = NULL;
@@ -284,14 +284,14 @@ void ui_Screen1_screen_init(void)
         make_label(ui_Screen1, "E", &lv_font_montserrat_22, 0xFFFFFF, ex, ey);
     }
 
-    // ---- Speed ----
-    make_label(ui_Screen1, "mph", &lv_font_montserrat_20, C_MUTED, 0, S(-142));
+    // ---- RPM readout (speed lives on the second cluster) ----
+    make_label(ui_Screen1, "rpm", &lv_font_montserrat_20, C_MUTED, 0, S(-142));
 
-    ui_label_mph_value = lv_label_create(ui_Screen1);
-    lv_label_set_text(ui_label_mph_value, "--");
-    lv_obj_set_style_text_font(ui_label_mph_value, &lv_font_montserrat_44, 0);
-    lv_obj_set_style_text_color(ui_label_mph_value, lv_color_white(), 0);
-    lv_obj_align(ui_label_mph_value, LV_ALIGN_CENTER, 0, S(-78));
+    ui_label_rpm_value = lv_label_create(ui_Screen1);
+    lv_label_set_text(ui_label_rpm_value, "--");
+    lv_obj_set_style_text_font(ui_label_rpm_value, &lv_font_montserrat_44, 0);
+    lv_obj_set_style_text_color(ui_label_rpm_value, lv_color_white(), 0);
+    lv_obj_align(ui_label_rpm_value, LV_ALIGN_CENTER, 0, S(-78));
 
     // ---- Four sensor tiles ----
     ui_val_oil_psi  = make_tile(ui_Screen1, "OIL PSI",  S(-108), S(28));
@@ -333,7 +333,7 @@ void ui_Screen1_screen_destroy(void)
     ui_Screen1 = NULL;
     ui_rpm_arc = NULL;
     ui_fuel_arc = NULL;
-    ui_label_mph_value = NULL;
+    ui_label_rpm_value = NULL;
     ui_label_odometer_value = NULL;
     ui_val_oil_psi = NULL;
     ui_val_water = NULL;
@@ -361,20 +361,14 @@ void ui_dash_set_rpm(int rpm)
     }
 
     lv_arc_set_value(ui_rpm_arc, rpm);
-}
 
-void ui_dash_set_speed_mph(float mph)
-{
-    if (!ui_label_mph_value) return;
-
-    char buf[8];
-    if (isnan(mph) || mph < 0.0f) {
-        lv_label_set_text(ui_label_mph_value, "--");
-        return;
-    }
-    snprintf(buf, sizeof(buf), "%d", (int)(mph + 0.5f));
-    if (strcmp(lv_label_get_text(ui_label_mph_value), buf) != 0) {
-        lv_label_set_text(ui_label_mph_value, buf);
+    // Big centre number. Rounded to 10 rpm so the label isn't rebuilt on
+    // every single tick.
+    if (ui_label_rpm_value) {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%d", (rpm / 10) * 10);
+        if (strcmp(lv_label_get_text(ui_label_rpm_value), buf) != 0)
+            lv_label_set_text(ui_label_rpm_value, buf);
     }
 }
 

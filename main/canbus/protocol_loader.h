@@ -2,7 +2,9 @@
 
 #include <stdint.h>
 
-#define MAX_PROTOCOLS 8
+// Must be >= the number of json files in canbus/protocols/ -- the loader
+// silently drops any protocol past this limit.
+#define MAX_PROTOCOLS 10
 #define MAX_FRAMES    64
 #define MAX_SIGNALS   16
 #define CAN_ID_MAX    2048

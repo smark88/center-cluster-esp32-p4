@@ -26,7 +26,7 @@ extern lv_obj_t *ui_Screen1;
 // Driven from main.c
 extern lv_obj_t *ui_rpm_arc;             // lv_arc, range 0..TACH_MAX_RPM
 extern lv_obj_t *ui_fuel_arc;            // lv_arc, range 0..100
-extern lv_obj_t *ui_label_mph_value;
+extern lv_obj_t *ui_label_rpm_value;
 extern lv_obj_t *ui_label_odometer_value;
 extern lv_obj_t *ui_val_oil_psi;
 extern lv_obj_t *ui_val_water;
@@ -34,8 +34,9 @@ extern lv_obj_t *ui_val_oil_temp;
 extern lv_obj_t *ui_val_trans;
 
 // Convenience setters. Pass NAN for "no data" and the tile shows "--".
+// ui_dash_set_rpm drives both the outer arc and the big centre readout.
+// Speed is NOT shown on this gauge -- it lives on the second cluster.
 void ui_dash_set_rpm(int rpm);
-void ui_dash_set_speed_mph(float mph);
 void ui_dash_set_fuel_pct(float pct);
 void ui_dash_set_oil_psi(float psi);
 void ui_dash_set_water_f(float degf);

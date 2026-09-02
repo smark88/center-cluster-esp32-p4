@@ -66,12 +66,15 @@ idf_component_register(
         "odometer/odometer.c"
         "canbus/canbus.c"
         "canbus/protocol_loader.c"
+        "canbus/can_scan.c"
+        "demo/dash_demo.c"
         ${PROTOCOL_LIST_FILE}
 
     INCLUDE_DIRS
         "./tach_ui"
         "./odometer"
         "./canbus"
+        "./demo"
         "."
 
     EMBED_TXTFILES

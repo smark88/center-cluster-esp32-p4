@@ -23,6 +23,8 @@
 #include "esp_timer.h"
 #include "odometer/odometer.h"
 #include "canbus.h"
+#include "dash_demo.h"
+#include "can_scan.h"
 
 
 // =======================================================
@@ -81,8 +83,9 @@
 
 
 //------------SPEED----------//
-// Speed now comes from CAN only (can_data.speed, KPH -> MPH). Values below this
-// are treated as stopped so the dash doesn't flicker at a standstill.
+// Speed comes from CAN only. can_data.speed is already MPH -- the protocol
+// json folds any conversion into its scale. Values below this are treated as
+// stopped so the dash doesn't flicker at a standstill.
 #define SPEED_MIN_VALID_MPH 3.0f
 
 static volatile float g_speed_mph = 0.0f;
@@ -541,15 +544,26 @@ static int detect_gear(float rpm, float mph, float dt)
 
 void gauge_timer(lv_timer_t * t) {
 
+#if DASH_DEMO_MODE
+    // Bench demo: overwrite the sensor globals with simulated values.
+    dash_demo_t demo;
+    dash_demo_sample(&demo);
+    rpmNow                        = demo.rpm;
+    g_speed_mph                   = demo.speed_mph;
+    g_gauge_data.fuel_level_pct   = demo.fuel_pct;
+    g_gauge_data.oil_pressure_psi = demo.oil_psi;
+    g_gauge_data.water_temp_f     = demo.water_f;
+    g_gauge_data.oil_temp_f       = demo.oil_temp_f;
+    g_gauge_data.trans_temp_f     = demo.trans_f;
+#endif
+
     // Smooth the needle so it sweeps instead of snapping.
     static float displayRPM = 0.0f;
     displayRPM += 0.20f * (rpmNow - displayRPM);
     ui_dash_set_rpm((int)displayRPM);
 
-    float speed_mph = g_speed_mph;
-    if (speed_mph < SPEED_MIN_VALID_MPH)
-        speed_mph = 0.0f;
-    ui_dash_set_speed_mph(speed_mph);
+    // Speed is not displayed on this gauge -- it goes to the second cluster.
+    // g_speed_mph is still used for the odometer.
 
     ui_dash_set_mileage(odometer_get_miles());
 
@@ -923,17 +937,16 @@ static void can_mapping_task(void *arg){
         // ---------- Drivetrain ----------
         rpmNow = can_data.rpm;
 
-        // CAN speed usually in KPH
-        g_speed_mph = can_data.speed * 0.621371f;
+        // can_data.speed is already MPH -- every protocol json folds the
+        // kph->mph factor into its own scale.
+        g_speed_mph = can_data.speed;
 
         // ---------- Odometer ----------
         if (now_ms - last_odo_ms >= 1000){
             last_odo_ms = now_ms;
 
-            float speed_kph = can_data.speed;
-
-            // meters per second
-            float meters_per_sec = speed_kph / 3.6f;
+            // 1 mph = 0.44704 m/s, and this runs once a second.
+            float meters_per_sec = can_data.speed * 0.44704f;
 
             uint32_t whole = (uint32_t)meters_per_sec;
 
@@ -1018,6 +1031,14 @@ void app_main(void) {
     uart_init(UART_PORT, UART_TX_PIN, UART_PIN_NO_CHANGE, UART_TX_BUF_SIZE, UART_BAUD_RATE); 
     uart_init(UART1_PORT, UART1_TX_PIN, UART_PIN_NO_CHANGE, UART_TX_BUF_SIZE, UART_BAUD_RATE); 
 
+#if CAN_SCAN_MODE
+    // Bus sniffing only -- nothing else runs. See canbus/can_scan.h.
+    xTaskCreatePinnedToCore(can_scan_task, "can_scan", 4096, NULL, 10, NULL, 0);
+#elif DASH_DEMO_MODE
+    // Simulated engine only -- the sensor tasks stay off so they can't fight
+    // the demo for the same globals.
+    dash_demo_start();
+#else
     if (SENSOR_SOURCE == SENSOR_SOURCE_CAN){
         canbus_init();
         xTaskCreatePinnedToCore(canbus_task,"can_rx",4096,NULL,10,NULL,0);
@@ -1026,6 +1047,7 @@ void app_main(void) {
         xTaskCreatePinnedToCore(tach_task, "tach_task", 4096, NULL, 10, NULL, 0);
         xTaskCreatePinnedToCore(adc_task, "adc_uart_task", 4096, NULL, 5, NULL, 0);
     }
+#endif
 
     xTaskCreatePinnedToCore(save_miles_task, "save_miles_task", 4096, NULL, 4, NULL, 0);
 
