@@ -22,7 +22,7 @@ extern "C" {
 // A tile flashes red while its reading is outside these limits.
 // ---------------------------------------------------------------------------
 #define WARN_OIL_PSI_MIN   15.0f    // flash below this
-#define WARN_OIL_TEMP_MAX  190.0f   // flash above this
+#define WARN_OIL_TEMP_MAX  290.0f   // flash above this
 #define WARN_WATER_MAX     245.0f   // flash above this
 #define WARN_TRANS_MAX     260.0f   // flash above this
 

@@ -9,6 +9,7 @@
 #define DEMO_SWEEP_SEC 8.0f     // seconds for one idle -> redline -> idle pull
 #define DEMO_FUEL_SEC  45.0f    // seconds to drain the tank from full to empty
 #define DEMO_IDLE_RPM  800.0f
+#define DEMO_WARN_SEC  8.0f     // seconds per warning phase
 
 static int64_t s_t0_us = 0;
 
@@ -44,6 +45,19 @@ void dash_demo_sample(dash_demo_t *out)
     out->water_f    = 100.0f + warm * 95.0f  + wobble;
     out->oil_temp_f = 100.0f + warm * 115.0f + wobble;
     out->trans_f    = 100.0f + warm * 80.0f  + wobble;
+
+#if DEMO_EXERCISE_WARNINGS
+    // Drive one channel past its limit at a time, then a quiet phase, so each
+    // tile can be seen flashing on its own. Offsets are taken from the real
+    // thresholds, so retuning a threshold keeps the demo honest.
+    switch (((int)(t / DEMO_WARN_SEC)) % 5) {
+        case 1: out->oil_psi    = WARN_OIL_PSI_MIN  -  7.0f; break;
+        case 2: out->oil_temp_f = WARN_OIL_TEMP_MAX + 15.0f; break;
+        case 3: out->water_f    = WARN_WATER_MAX    + 10.0f; break;
+        case 4: out->trans_f    = WARN_TRANS_MAX    + 15.0f; break;
+        default: break;   // phase 0: everything in range
+    }
+#endif
 }
 
 #endif // DASH_DEMO_MODE
