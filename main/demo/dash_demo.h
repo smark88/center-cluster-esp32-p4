@@ -22,6 +22,10 @@ extern "C" {
 // 1 = simulated engine, 0 = real sensors / CAN.
 #define DASH_DEMO_MODE 1
 
+// Walk each tile past its warning threshold in turn so the red flashes can be
+// verified on the bench. 0 = plausible values only, nothing ever alarms.
+#define DEMO_EXERCISE_WARNINGS 1
+
 // One simulated sample. Mirrors the values the real sensors produce.
 typedef struct {
     float rpm;
