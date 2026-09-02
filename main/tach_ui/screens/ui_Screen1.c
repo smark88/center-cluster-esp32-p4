@@ -9,6 +9,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>   // abs
+#include "esp_timer.h"
 
 // ---------------------------------------------------------------- geometry --
 
@@ -99,10 +100,11 @@ static lv_point_t s_tick_pts[TICK_COUNT][2];
 enum { TILE_IAT = 0, TILE_FUEL_PSI, TILE_AFR, TILE_BOOST, TILE_COUNT };
 
 typedef struct {
-    lv_obj_t *tile;     // for the border and ring
-    lv_obj_t *value;    // for the number
-    bool      alarm;    // currently out of range
-    bool      lit;      // red is currently applied
+    lv_obj_t *tile;         // for the border and ring
+    lv_obj_t *value;        // for the number
+    bool      alarm;        // currently out of range
+    bool      lit;          // red is currently applied
+    int64_t   hold_until;   // earliest time the alarm may clear
 } tile_t;
 
 static tile_t s_tiles[TILE_COUNT];
@@ -222,9 +224,27 @@ static void tile_flash_cb(lv_timer_t *t)
 }
 
 // Latch the alarm state; the blink timer does the drawing.
+//
+// Alarms are judged on the RAW reading, never the smoothed one. Smoothing is
+// a display convenience; feeding it to a threshold means a short excursion
+// can fail to cross at all -- a 100ms fuel pressure dip to 38psi only drags a
+// 200ms-tau average down to 42, so the alarm would simply never fire. That is
+// a missing alarm, not a late one.
+//
+// Flicker is dealt with where it belongs instead: hysteresis on the clear,
+// and a minimum hold so a brief trip stays visible long enough to read.
 static void set_alarm(int slot, bool on)
 {
     if (slot < 0 || slot >= TILE_COUNT) return;
+
+    int64_t now = esp_timer_get_time() / 1000;
+
+    if (on) {
+        s_tiles[slot].hold_until = now + WARN_MIN_HOLD_MS;
+    } else if (s_tiles[slot].alarm && now < s_tiles[slot].hold_until) {
+        return;                      // still inside the minimum hold
+    }
+
     if (s_tiles[slot].alarm == on) return;
 
     s_tiles[slot].alarm = on;
@@ -249,27 +269,18 @@ static void polar(lv_coord_t centre, float radius, float deg,
     *out_y = (lv_coord_t)(centre + radius * sinf(rad));
 }
 
-// The OBD PIDs land at 0.5-10Hz while this screen redraws at 30, so a raw
-// value would visibly step. Each reading is eased toward its latest sample at
-// the display rate, with a time constant matched to that channel's poll
-// period -- roughly half the sample interval, which glides between samples
-// without adding perceptible lag.
+// Tiles show the reading as sampled, with no filtering.
 //
-// This is presentation only. Smoothing cannot recover a transient that was
-// never sampled, which is why the poll periods are tuned first.
-#define EASE_BOOST     0.25f   // polled 100ms  -> tau ~130ms
-#define EASE_AFR       0.15f   // polled 200ms  -> tau ~220ms
-#define EASE_FUEL_PSI  0.15f   // polled 200ms
-#define EASE_IAT       0.05f   // polled 600ms  -> tau ~670ms
-#define EASE_FUEL_LVL  0.01f   // polled 2s, and noisy from tank slosh
-
-static float ease(float *state, float target, float alpha)
-{
-    if (isnan(target)) { *state = NAN; return NAN; }
-    if (isnan(*state)) { *state = target; return target; }   // first sample
-    *state += alpha * (target - *state);
-    return *state;
-}
+// Smoothing was tried and removed. It helps only when the jitter is
+// measurement noise; when the movement is real it deletes information. AFR
+// and boost move genuinely fast and a real wideband or boost gauge dances in
+// exactly the same way, so a filtered version would look calmer while telling
+// the driver less. IAT changes about a digit every second or two at its poll
+// rate, and fuel pressure is steady enough at cruise that at worst the last
+// digit dithers by one.
+//
+// If a channel ever does need it, filter it at the source in obd_poll.c
+// rather than here, so the alarm and the display keep agreeing.
 
 static void set_value(lv_obj_t *label, float v, const char *fmt)
 {
@@ -454,6 +465,7 @@ void ui_Screen1_screen_destroy(void)
         s_tiles[i].value = NULL;
         s_tiles[i].alarm = false;
         s_tiles[i].lit   = false;
+        s_tiles[i].hold_until = 0;
     }
     for (int i = 0; i < GEAR_COUNT; i++) {
         s_gear_box[i] = NULL;
@@ -497,36 +509,33 @@ void ui_dash_set_rpm(int rpm)
 
 void ui_dash_set_iat_f(float degf)
 {
-    static float st = NAN;
-    float v = ease(&st, degf, EASE_IAT);
-    set_value(ui_val_iat, v, "%.0f");
-    set_alarm(TILE_IAT, !isnan(v) && v > WARN_IAT_MAX);
+    set_value(ui_val_iat, degf, "%.0f");
+    set_alarm(TILE_IAT, !isnan(degf) &&
+        (s_tiles[TILE_IAT].alarm ? degf > WARN_IAT_CLEAR : degf > WARN_IAT_MAX));
 }
 
 void ui_dash_set_fuel_psi(float psi)
 {
-    static float st = NAN;
-    float v = ease(&st, psi, EASE_FUEL_PSI);
-    set_value(ui_val_fuel_psi, v, "%.0f");
-    set_alarm(TILE_FUEL_PSI, !isnan(v) && v < WARN_FUEL_PSI_MIN);
+    set_value(ui_val_fuel_psi, psi, "%.0f");
+    set_alarm(TILE_FUEL_PSI, !isnan(psi) &&
+        (s_tiles[TILE_FUEL_PSI].alarm ? psi < WARN_FUEL_PSI_CLEAR
+                                      : psi < WARN_FUEL_PSI_MIN));
 }
 
 void ui_dash_set_afr(float afr)
 {
-    static float st = NAN;
-    afr = ease(&st, afr, EASE_AFR);
     set_value(ui_val_afr, afr, "%.1f");
     // Lean only matters under load. Cruise and overrun are lean by design, so
     // gate the warning on the engine actually pulling.
     set_alarm(TILE_AFR,
-              !isnan(afr) && afr > WARN_AFR_MAX &&
-              s_last_rpm >= WARN_AFR_MIN_RPM);
+              !isnan(afr) && s_last_rpm >= WARN_AFR_MIN_RPM &&
+              (s_tiles[TILE_AFR].alarm ? afr > WARN_AFR_CLEAR
+                                       : afr > WARN_AFR_MAX));
 }
 
 void ui_dash_set_boost_psi(float psi)
 {
-    static float st = NAN;
-    set_value(ui_val_boost, ease(&st, psi, EASE_BOOST), "%.1f");
+    set_value(ui_val_boost, psi, "%.1f");
 }
 
 void ui_dash_set_drive_gear(int gear)

@@ -28,6 +28,17 @@ extern "C" {
 // the AFR warning is gated on the engine actually pulling.
 #define WARN_AFR_MIN_RPM    2000
 
+// Hysteresis: a tile clears only once the reading has recovered past the
+// limit by this much, so a value sitting exactly on the threshold does not
+// strobe on and off.
+#define WARN_IAT_CLEAR      165.0f
+#define WARN_FUEL_PSI_CLEAR  43.0f
+#define WARN_AFR_CLEAR       13.7f
+
+// Once tripped, a tile stays lit at least this long. A fuel pressure dip can
+// be over in 100ms, which is far too brief to notice otherwise.
+#define WARN_MIN_HOLD_MS    2000
+
 // Flash half-period.
 #define WARN_FLASH_MS       450
 
