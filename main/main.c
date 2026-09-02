@@ -25,6 +25,7 @@
 #include "canbus.h"
 #include "dash_demo.h"
 #include "can_scan.h"
+#include "obd_poll.h"
 
 
 // =======================================================
@@ -967,6 +968,7 @@ static void can_mapping_task(void *arg){
         g_gauge_data.oil_temp_f       = can_data.oil_temp;
         g_gauge_data.trans_temp_f     = can_data.trans_temp;
         g_gauge_data.fuel_level_pct   = can_data.fuel_level;
+        g_gauge_data.fuel_pressure_psi = can_data.fuel_pressure;
         g_gauge_data.afr = can_data.air_fuel_ratio;
         g_gauge_data.boost_psi = can_data.boost;
         g_gauge_data.fuel_comp = can_data.fuel_comp;
@@ -1050,6 +1052,10 @@ void app_main(void) {
         canbus_init();
         xTaskCreatePinnedToCore(canbus_task,"can_rx",4096,NULL,10,NULL,0);
         xTaskCreatePinnedToCore(can_mapping_task,"can_mapping_task",4096,NULL,10,NULL,1);
+        // Coolant, oil temp and fuel level over OBD. The fuel arc has no
+        // other source in CAN mode -- adc_task does not run there. Note this
+        // transmits; see obd_poll.h.
+        obd_poll_start();
     } else {
         xTaskCreatePinnedToCore(tach_task, "tach_task", 4096, NULL, 10, NULL, 0);
         xTaskCreatePinnedToCore(adc_task, "adc_uart_task", 4096, NULL, 5, NULL, 0);

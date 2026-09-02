@@ -30,6 +30,18 @@ extern "C" {
 // suppressed until the engine is actually turning.
 #define WARN_OIL_PSI_MIN_RPM 400
 
+// Hysteresis: a tile clears only once the reading has recovered past the
+// limit by this much, so a value sitting exactly on the threshold does not
+// strobe on and off.
+#define WARN_OIL_PSI_CLEAR   18.0f
+#define WARN_OIL_TEMP_CLEAR 285.0f
+#define WARN_WATER_CLEAR    240.0f
+#define WARN_TRANS_CLEAR    255.0f
+
+// Once tripped, a tile stays lit at least this long. An oil pressure dip can
+// be over in a fraction of a second, which is far too brief to notice.
+#define WARN_MIN_HOLD_MS   2000
+
 // Flash half-period.
 #define WARN_FLASH_MS      450
 

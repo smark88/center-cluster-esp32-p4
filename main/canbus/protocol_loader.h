@@ -1,12 +1,18 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // Must be >= the number of json files in canbus/protocols/ -- the loader
 // silently drops any protocol past this limit.
 #define MAX_PROTOCOLS 10
-#define MAX_FRAMES    64
-#define MAX_SIGNALS   16
+// Right-sized against the json actually shipped: haltech is the widest at 21
+// frames, ecumasters_black the deepest at 17 signals in one frame. At the old
+// 64/16 this table was 285KB of internal DRAM, which overflowed the region and
+// meant the CAN build would not link at all -- and MAX_SIGNALS 16 was quietly
+// truncating ecumasters' 17th signal ("lc").
+#define MAX_FRAMES    32
+#define MAX_SIGNALS   20
 #define CAN_ID_MAX    2048
 
 typedef enum {
@@ -16,8 +22,14 @@ typedef enum {
 
 typedef struct {
     float *target;
-    uint8_t offset;
-    uint8_t len;
+    uint8_t offset;      // byte offset, used when bit_len == 0
+    uint8_t len;         // 1 or 2 bytes, used when bit_len == 0
+    // Bit-level extraction. Set bit_len non-zero to use DBC "start|length"
+    // form instead of the byte form above; that is the only way to read a
+    // signal that does not begin on a byte boundary, such as a gear selector.
+    uint8_t bit_start;   // DBC start bit: MSB for big endian, LSB for little
+    uint8_t bit_len;     // 0 = not a bit field
+    bool    is_signed;   // two's complement
     float scale;
     float offset_val;
     endian_t endian;

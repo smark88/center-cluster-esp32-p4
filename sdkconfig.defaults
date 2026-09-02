@@ -57,3 +57,7 @@ CONFIG_ESPTOOLPY_FLASHSIZE="32MB"
 
 # 4in 720x720 Waveshare panel (kept here so a full clean/regenerate does not revert to 800x800)
 CONFIG_BSP_LCD_TYPE_720_720_4_INCH=y
+
+# protocols[] in protocol_loader lives in PSRAM; without this the CAN build
+# overflows internal DRAM and fails to link.
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y

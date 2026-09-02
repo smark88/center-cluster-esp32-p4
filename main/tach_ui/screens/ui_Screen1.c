@@ -9,6 +9,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>   // abs
+#include "esp_timer.h"
 
 // ---------------------------------------------------------------- geometry --
 
@@ -90,10 +91,11 @@ static lv_point_t s_tick_pts[TICK_COUNT][2];
 enum { TILE_OIL_PSI = 0, TILE_WATER, TILE_OIL_TEMP, TILE_TRANS, TILE_COUNT };
 
 typedef struct {
-    lv_obj_t *tile;     // for the border
-    lv_obj_t *value;    // for the number
-    bool      alarm;    // currently out of range
-    bool      lit;      // red is currently applied
+    lv_obj_t *tile;         // for the border and ring
+    lv_obj_t *value;        // for the number
+    bool      alarm;        // currently out of range
+    bool      lit;          // red is currently applied
+    int64_t   hold_until;   // earliest time the alarm may clear
 } tile_t;
 
 static tile_t s_tiles[TILE_COUNT];
@@ -203,9 +205,23 @@ static void tile_flash_cb(lv_timer_t *t)
 }
 
 // Latch the alarm state; the blink timer does the drawing.
+//
+// Alarms judge the reading as sampled. Filtering the input to a threshold
+// means a short excursion can fail to cross it at all rather than merely
+// crossing it late, so flicker is handled with hysteresis on the clear and a
+// minimum hold instead.
 static void set_alarm(int slot, bool on)
 {
     if (slot < 0 || slot >= TILE_COUNT) return;
+
+    int64_t now = esp_timer_get_time() / 1000;
+
+    if (on) {
+        s_tiles[slot].hold_until = now + WARN_MIN_HOLD_MS;
+    } else if (s_tiles[slot].alarm && now < s_tiles[slot].hold_until) {
+        return;                      // still inside the minimum hold
+    }
+
     if (s_tiles[slot].alarm == on) return;
 
     s_tiles[slot].alarm = on;
@@ -445,6 +461,7 @@ void ui_Screen1_screen_destroy(void)
         s_tiles[i].value = NULL;
         s_tiles[i].alarm = false;
         s_tiles[i].lit = false;
+        s_tiles[i].hold_until = 0;
     }
 }
 
@@ -504,26 +521,29 @@ void ui_dash_set_oil_psi(float psi)
     set_value(ui_val_oil_psi, psi, "%.0f");
     // Oil pressure reads 0 with the engine off, so only warn once it turns.
     set_alarm(TILE_OIL_PSI,
-              !isnan(psi) && psi < WARN_OIL_PSI_MIN &&
-              s_last_rpm >= WARN_OIL_PSI_MIN_RPM);
+              !isnan(psi) && s_last_rpm >= WARN_OIL_PSI_MIN_RPM &&
+              (s_tiles[TILE_OIL_PSI].alarm ? psi < WARN_OIL_PSI_CLEAR : psi < WARN_OIL_PSI_MIN));
 }
 
 void ui_dash_set_water_f(float degf)
 {
     set_value(ui_val_water, degf, "%.0f");
-    set_alarm(TILE_WATER, !isnan(degf) && degf > WARN_WATER_MAX);
+    set_alarm(TILE_WATER, !isnan(degf) &&
+        (s_tiles[TILE_WATER].alarm ? degf > WARN_WATER_CLEAR : degf > WARN_WATER_MAX));
 }
 
 void ui_dash_set_oil_temp_f(float f)
 {
     set_value(ui_val_oil_temp, f, "%.0f");
-    set_alarm(TILE_OIL_TEMP, !isnan(f) && f > WARN_OIL_TEMP_MAX);
+    set_alarm(TILE_OIL_TEMP, !isnan(f) &&
+        (s_tiles[TILE_OIL_TEMP].alarm ? f > WARN_OIL_TEMP_CLEAR : f > WARN_OIL_TEMP_MAX));
 }
 
 void ui_dash_set_trans_f(float degf)
 {
     set_value(ui_val_trans, degf, "%.0f");
-    set_alarm(TILE_TRANS, !isnan(degf) && degf > WARN_TRANS_MAX);
+    set_alarm(TILE_TRANS, !isnan(degf) &&
+        (s_tiles[TILE_TRANS].alarm ? degf > WARN_TRANS_CLEAR : degf > WARN_TRANS_MAX));
 }
 
 void ui_dash_set_mileage(double miles)
