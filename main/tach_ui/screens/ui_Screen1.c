@@ -31,6 +31,7 @@
 #define R_TICK_MINOR_IN   287
 #define R_NUMBERS         257
 #define R_RPM_ARC         316
+#define RPM_ARC_W         18    // was 12; thickened by half
 #define R_FUEL_ARC        270
 #define R_FUEL_LABELS     292
 
@@ -71,6 +72,20 @@ lv_obj_t *ui_val_trans = NULL;
 // lv_line keeps a pointer to the caller's points, so they must outlive it.
 static lv_point_t s_tick_pts[TICK_COUNT][2];
 
+// ------------------------------------------------------------ tile alarms --
+
+enum { TILE_OIL_PSI = 0, TILE_WATER, TILE_OIL_TEMP, TILE_TRANS, TILE_COUNT };
+
+typedef struct {
+    lv_obj_t *tile;     // for the border
+    lv_obj_t *value;    // for the number
+    bool      alarm;    // currently out of range
+    bool      lit;      // red is currently applied
+} tile_t;
+
+static tile_t s_tiles[TILE_COUNT];
+static int    s_last_rpm = 0;
+
 // ----------------------------------------------------------------- helpers --
 
 static lv_obj_t *make_disc(lv_obj_t *parent, lv_coord_t size, uint32_t color)
@@ -102,7 +117,7 @@ static lv_obj_t *make_label(lv_obj_t *parent, const char *txt,
 
 // A bordered tile with a muted caption and a large value underneath.
 static lv_obj_t *make_tile(lv_obj_t *parent, const char *caption,
-                           lv_coord_t dx, lv_coord_t dy)
+                           lv_coord_t dx, lv_coord_t dy, int slot)
 {
     lv_obj_t *tile = lv_obj_create(parent);
     lv_obj_set_size(tile, S(TILE_W), S(TILE_H));
@@ -129,7 +144,51 @@ static lv_obj_t *make_tile(lv_obj_t *parent, const char *caption,
     lv_obj_set_style_text_color(val, lv_color_white(), 0);
     lv_obj_align(val, LV_ALIGN_BOTTOM_MID, 0, S(-6));
 
+    s_tiles[slot].tile  = tile;
+    s_tiles[slot].value = val;
+    s_tiles[slot].alarm = false;
+    s_tiles[slot].lit   = false;
+
     return val;   // caller keeps the value label
+}
+
+// Blinks whichever tiles are out of range. Only touches a tile when its
+// appearance actually has to change, so an all-clear dash costs nothing.
+static void tile_flash_cb(lv_timer_t *t)
+{
+    LV_UNUSED(t);
+    static bool phase = false;
+    phase = !phase;
+
+    for (int i = 0; i < TILE_COUNT; i++) {
+        tile_t *tl = &s_tiles[i];
+        if (!tl->value) continue;
+
+        bool want_red = tl->alarm && phase;
+        if (want_red == tl->lit) continue;
+
+        lv_obj_set_style_text_color(tl->value,
+            want_red ? lv_color_hex(C_RED) : lv_color_white(), 0);
+        lv_obj_set_style_border_color(tl->tile,
+            want_red ? lv_color_hex(C_RED) : lv_color_hex(C_TILE_LINE), 0);
+        tl->lit = want_red;
+    }
+}
+
+// Latch the alarm state; the blink timer does the drawing.
+static void set_alarm(int slot, bool on)
+{
+    if (slot < 0 || slot >= TILE_COUNT) return;
+    if (s_tiles[slot].alarm == on) return;
+
+    s_tiles[slot].alarm = on;
+
+    if (!on && s_tiles[slot].lit) {          // clear immediately
+        lv_obj_set_style_text_color(s_tiles[slot].value, lv_color_white(), 0);
+        lv_obj_set_style_border_color(s_tiles[slot].tile,
+                                      lv_color_hex(C_TILE_LINE), 0);
+        s_tiles[slot].lit = false;
+    }
 }
 
 // Point on the dial circle, in dial-container coordinates.
@@ -225,7 +284,7 @@ void ui_Screen1_screen_init(void)
 
     // ---- RPM sweep, sitting just outside the tick track ----
     ui_rpm_arc = lv_arc_create(ui_Screen1);
-    lv_obj_set_size(ui_rpm_arc, S(2 * R_RPM_ARC + 12), S(2 * R_RPM_ARC + 12));
+    lv_obj_set_size(ui_rpm_arc, S(2 * R_RPM_ARC + RPM_ARC_W), S(2 * R_RPM_ARC + RPM_ARC_W));
     lv_obj_center(ui_rpm_arc);
     lv_arc_set_rotation(ui_rpm_arc, 0);
     lv_arc_set_bg_angles(ui_rpm_arc, (uint16_t)DIAL_START_ANGLE,
@@ -233,12 +292,12 @@ void ui_Screen1_screen_init(void)
     lv_arc_set_range(ui_rpm_arc, 0, TACH_MAX_RPM);
     lv_arc_set_value(ui_rpm_arc, 0);
 
-    lv_obj_set_style_arc_width(ui_rpm_arc, S(12), LV_PART_MAIN);
+    lv_obj_set_style_arc_width(ui_rpm_arc, S(RPM_ARC_W), LV_PART_MAIN);
     lv_obj_set_style_arc_color(ui_rpm_arc, lv_color_hex(C_TRACK), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(ui_rpm_arc, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(ui_rpm_arc, 0, LV_PART_MAIN);
 
-    lv_obj_set_style_arc_width(ui_rpm_arc, S(12), LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(ui_rpm_arc, S(RPM_ARC_W), LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(ui_rpm_arc, lv_color_hex(0x28FF00), LV_PART_INDICATOR);
     lv_obj_set_style_arc_rounded(ui_rpm_arc, false, LV_PART_INDICATOR);
 
@@ -303,10 +362,12 @@ void ui_Screen1_screen_init(void)
     lv_obj_align(ui_label_rpm_value, LV_ALIGN_CENTER, 0, S(-75));
 
     // ---- Four sensor tiles ----
-    ui_val_oil_psi  = make_tile(ui_Screen1, "OIL PSI",  S(-TILE_DX), S(TILE_ROW1_DY));
-    ui_val_water    = make_tile(ui_Screen1, "WATER",     S(TILE_DX),  S(TILE_ROW1_DY));
-    ui_val_oil_temp = make_tile(ui_Screen1, "OIL TEMP", S(-TILE_DX), S(TILE_ROW2_DY));
-    ui_val_trans    = make_tile(ui_Screen1, "TRANS",     S(TILE_DX),  S(TILE_ROW2_DY));
+    ui_val_oil_psi  = make_tile(ui_Screen1, "OIL PSI",  S(-TILE_DX), S(TILE_ROW1_DY), TILE_OIL_PSI);
+    ui_val_water    = make_tile(ui_Screen1, "WATER",     S(TILE_DX),  S(TILE_ROW1_DY), TILE_WATER);
+    ui_val_oil_temp = make_tile(ui_Screen1, "OIL TEMP", S(-TILE_DX), S(TILE_ROW2_DY), TILE_OIL_TEMP);
+    ui_val_trans    = make_tile(ui_Screen1, "TRANS",     S(TILE_DX),  S(TILE_ROW2_DY), TILE_TRANS);
+
+    lv_timer_create(tile_flash_cb, WARN_FLASH_MS, NULL);
 
     // ---- Mileage ----
     make_label(ui_Screen1, "MILEAGE", &lv_font_montserrat_14, C_MUTED, 0, S(169));
@@ -348,6 +409,13 @@ void ui_Screen1_screen_destroy(void)
     ui_val_water = NULL;
     ui_val_oil_temp = NULL;
     ui_val_trans = NULL;
+
+    for (int i = 0; i < TILE_COUNT; i++) {
+        s_tiles[i].tile = NULL;
+        s_tiles[i].value = NULL;
+        s_tiles[i].alarm = false;
+        s_tiles[i].lit = false;
+    }
 }
 
 // ----------------------------------------------------------------- setters --
@@ -358,6 +426,8 @@ void ui_dash_set_rpm(int rpm)
 
     if (rpm < 0) rpm = 0;
     if (rpm > TACH_MAX_RPM) rpm = TACH_MAX_RPM;
+
+    s_last_rpm = rpm;
 
     // Green below 5000, amber to the redline, red past it.
     static uint32_t last = 0;
@@ -399,10 +469,32 @@ void ui_dash_set_fuel_pct(float pct)
     lv_arc_set_value(ui_fuel_arc, (int16_t)pct);
 }
 
-void ui_dash_set_oil_psi(float psi)   { set_value(ui_val_oil_psi,  psi,  "%.0f"); }
-void ui_dash_set_water_f(float degf)  { set_value(ui_val_water,    degf, "%.0f"); }
-void ui_dash_set_oil_temp_f(float f)  { set_value(ui_val_oil_temp, f,    "%.0f"); }
-void ui_dash_set_trans_f(float degf)  { set_value(ui_val_trans,    degf, "%.0f"); }
+void ui_dash_set_oil_psi(float psi)
+{
+    set_value(ui_val_oil_psi, psi, "%.0f");
+    // Oil pressure reads 0 with the engine off, so only warn once it turns.
+    set_alarm(TILE_OIL_PSI,
+              !isnan(psi) && psi < WARN_OIL_PSI_MIN &&
+              s_last_rpm >= WARN_OIL_PSI_MIN_RPM);
+}
+
+void ui_dash_set_water_f(float degf)
+{
+    set_value(ui_val_water, degf, "%.0f");
+    set_alarm(TILE_WATER, !isnan(degf) && degf > WARN_WATER_MAX);
+}
+
+void ui_dash_set_oil_temp_f(float f)
+{
+    set_value(ui_val_oil_temp, f, "%.0f");
+    set_alarm(TILE_OIL_TEMP, !isnan(f) && f > WARN_OIL_TEMP_MAX);
+}
+
+void ui_dash_set_trans_f(float degf)
+{
+    set_value(ui_val_trans, degf, "%.0f");
+    set_alarm(TILE_TRANS, !isnan(degf) && degf > WARN_TRANS_MAX);
+}
 
 void ui_dash_set_mileage(double miles)
 {

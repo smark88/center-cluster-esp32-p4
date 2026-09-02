@@ -17,6 +17,22 @@ extern "C" {
 // RPM at which the dial ticks and the top number turn red.
 #define TACH_REDLINE_RPM  6400
 
+// ---------------------------------------------------------------------------
+// WARNING THRESHOLDS
+// A tile flashes red while its reading is outside these limits.
+// ---------------------------------------------------------------------------
+#define WARN_OIL_PSI_MIN   15.0f    // flash below this
+#define WARN_OIL_TEMP_MAX  190.0f   // flash above this
+#define WARN_WATER_MAX     245.0f   // flash above this
+#define WARN_TRANS_MAX     260.0f   // flash above this
+
+// Oil pressure is 0 with the engine off, so the low-pressure warning is
+// suppressed until the engine is actually turning.
+#define WARN_OIL_PSI_MIN_RPM 400
+
+// Flash half-period.
+#define WARN_FLASH_MS      450
+
 // SCREEN: ui_Screen1
 void ui_Screen1_screen_init(void);
 void ui_Screen1_screen_destroy(void);
