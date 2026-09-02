@@ -59,7 +59,27 @@ void process_can_frame(uint32_t id, uint8_t *data){
 
         uint32_t raw = 0;
 
-        if(sig->len==2){
+        if(sig->bit_len){
+            // DBC start|length form. Big endian (Motorola) walks down from the
+            // start bit and jumps to the MSB of the next byte; little endian
+            // (Intel) walks up from the start bit.
+            if(sig->endian==ENDIAN_BIG){
+                int bit = sig->bit_start;
+                for(int i=0;i<sig->bit_len;i++){
+                    if(bit < 0 || bit >= 64) break;
+                    raw = (raw<<1) | ((data[bit>>3] >> (bit & 7)) & 1);
+                    bit = (bit & 7) ? bit - 1 : bit + 15;
+                }
+            }
+            else{
+                for(int i=0;i<sig->bit_len;i++){
+                    int bit = sig->bit_start + i;
+                    if(bit >= 64) break;
+                    raw |= (uint32_t)((data[bit>>3] >> (bit & 7)) & 1) << i;
+                }
+            }
+        }
+        else if(sig->len==2){
             if(sig->endian==ENDIAN_BIG)
                 raw=(data[sig->offset]<<8)|data[sig->offset+1];
             else
@@ -69,8 +89,21 @@ void process_can_frame(uint32_t id, uint8_t *data){
             raw=data[sig->offset];
         }
 
-        if(sig->target)
-            *sig->target = raw*sig->scale + sig->offset_val;
+        if(sig->target){
+            float value;
+            if(sig->is_signed){
+                int width = sig->bit_len ? sig->bit_len : sig->len * 8;
+                uint32_t sign_bit = 1u << (width - 1);
+                if(width < 32 && (raw & sign_bit))
+                    value = (float)((int32_t)raw - (int32_t)(1u << width));
+                else
+                    value = (float)raw;
+            }
+            else{
+                value = (float)raw;
+            }
+            *sig->target = value*sig->scale + sig->offset_val;
+        }
     }
 }
 

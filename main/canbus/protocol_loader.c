@@ -43,6 +43,9 @@ static float* signal_name_to_ptr(const char *name){
     if (!strcmp(name,"oil_temp")) return &can_data.oil_temp;
     if (!strcmp(name,"trans_temp")) return &can_data.trans_temp;
     if (!strcmp(name,"fuel_level")) return &can_data.fuel_level;
+    if (!strcmp(name,"fuel_pressure")) return &can_data.fuel_pressure;
+    if (!strcmp(name,"gear_sel")) return &can_data.gear_sel;
+    if (!strcmp(name,"gear_num")) return &can_data.gear_num;
 
     //Haltech specific naming for air/fuel and boost.  Check your protocol for addition/different mapping
     if (!strcmp(name,"wb1")) return &can_data.air_fuel_ratio;
@@ -148,12 +151,18 @@ static void load_protocol_from_json(const char *json){
             cJSON *scale = cJSON_GetObjectItem(sig,"scale");
             cJSON *offset_val = cJSON_GetObjectItem(sig,"offset_val");
             cJSON *endian = cJSON_GetObjectItem(sig,"endian");
+            cJSON *bit_start = cJSON_GetObjectItem(sig,"bit_start");
+            cJSON *bit_len = cJSON_GetObjectItem(sig,"bit_len");
+            cJSON *is_signed = cJSON_GetObjectItem(sig,"signed");
 
             signal->target = name ? signal_name_to_ptr(name->valuestring) : NULL;
             signal->offset = offset ? offset->valueint : 0;
             signal->len = len ? len->valueint : 1;
             signal->scale = scale ? scale->valuedouble : 1.0f;
             signal->offset_val = offset_val ? offset_val->valuedouble : 0;
+            signal->bit_start = bit_start ? bit_start->valueint : 0;
+            signal->bit_len   = bit_len ? bit_len->valueint : 0;
+            signal->is_signed = is_signed ? cJSON_IsTrue(is_signed) : false;
 
             if(endian && endian->valuestring && !strcmp(endian->valuestring,"little"))
                 signal->endian = ENDIAN_LITTLE;

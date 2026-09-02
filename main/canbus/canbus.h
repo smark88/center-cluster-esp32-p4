@@ -31,6 +31,9 @@ typedef struct{
     float oil_temp;         // degF
     float trans_temp;       // degF
     float fuel_level;       // %
+    float fuel_pressure;    // psi
+    float gear_sel;         // selector position, protocol specific enum
+    float gear_num;         // engaged gear, 1..8
 } can_dash_data_t;
 
 

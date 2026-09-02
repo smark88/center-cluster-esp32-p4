@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // Must be >= the number of json files in canbus/protocols/ -- the loader
 // silently drops any protocol past this limit.
@@ -16,8 +17,14 @@ typedef enum {
 
 typedef struct {
     float *target;
-    uint8_t offset;
-    uint8_t len;
+    uint8_t offset;      // byte offset, used when bit_len == 0
+    uint8_t len;         // 1 or 2 bytes, used when bit_len == 0
+    // Bit-level extraction. Set bit_len non-zero to use DBC "start|length"
+    // form instead of the byte form above; that is the only way to read a
+    // signal that does not begin on a byte boundary, such as a gear selector.
+    uint8_t bit_start;   // DBC start bit: MSB for big endian, LSB for little
+    uint8_t bit_len;     // 0 = not a bit field
+    bool    is_signed;   // two's complement
     float scale;
     float offset_val;
     endian_t endian;

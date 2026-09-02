@@ -975,6 +975,18 @@ static void can_mapping_task(void *arg){
         g_gauge_data.trans_temp_f     = can_data.trans_temp;
         g_gauge_data.fuel_level_pct   = can_data.fuel_level;
         g_gauge_data.iat_f            = can_data.air_temp;
+        g_gauge_data.fuel_pressure_psi = can_data.fuel_pressure;
+
+        // GM PRNDL enum: 0 Park, 1 Neutral, 2 Drive, 3 Reverse. Other
+        // protocols may number these differently -- remap here if so.
+        {
+            static const char prndl[] = { 'P', 'N', 'D', 'R' };
+            int sel = (int)can_data.gear_sel;
+            ui_dash_set_gear((sel >= 0 && sel < 4) ? prndl[sel] : 0);
+
+            int g = (int)can_data.gear_num;
+            ui_dash_set_drive_gear((g >= 1 && g <= 8) ? g : 0);
+        }
         g_gauge_data.afr = can_data.air_fuel_ratio;
         g_gauge_data.boost_psi = can_data.boost;
         g_gauge_data.fuel_comp = can_data.fuel_comp;

@@ -2,27 +2,54 @@
   "name": "gm_global_a",
   "bitrate": 500000,
   "frames": [
-
     {
       "id": "0x0C9",
       "signals": [
-        {"name":"rpm","offset":1,"len":2,"scale":0.25,"endian":"big"}
+        {
+          "name": "rpm",
+          "offset": 1,
+          "len": 2,
+          "scale": 0.25,
+          "endian": "big"
+        }
       ]
     },
-
     {
       "id": "0x3E9",
       "signals": [
-        {"name":"speed","offset":0,"len":2,"scale":0.01,"endian":"big"}
+        {
+          "name": "speed",
+          "offset": 0,
+          "len": 2,
+          "scale": 0.01,
+          "endian": "big"
+        }
       ]
     },
-
     {
       "id": "0x4C1",
       "signals": [
-        {"name":"coolant_temp","offset":2,"len":1,"scale":1.8,"offset_val":-40,"endian":"big"}
+        {
+          "name": "coolant_temp",
+          "offset": 2,
+          "len": 1,
+          "scale": 1.8,
+          "offset_val": -40,
+          "endian": "big"
+        }
+      ]
+    },
+    {
+      "id": "0x135",
+      "signals": [
+        {
+          "name": "gear_sel",
+          "bit_start": 2,
+          "bit_len": 3,
+          "scale": 1,
+          "endian": "big"
+        }
       ]
     }
-
   ]
 }
