@@ -6,8 +6,13 @@
 // Must be >= the number of json files in canbus/protocols/ -- the loader
 // silently drops any protocol past this limit.
 #define MAX_PROTOCOLS 10
-#define MAX_FRAMES    64
-#define MAX_SIGNALS   16
+// Right-sized against the json actually shipped: haltech is the widest at 21
+// frames, ecumasters_black the deepest at 17 signals in one frame. At the old
+// 64/16 this table was 285KB of internal DRAM, which overflowed the region and
+// meant the CAN build would not link at all -- and MAX_SIGNALS 16 was quietly
+// truncating ecumasters' 17th signal ("lc").
+#define MAX_FRAMES    32
+#define MAX_SIGNALS   20
 #define CAN_ID_MAX    2048
 
 typedef enum {

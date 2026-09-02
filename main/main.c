@@ -25,6 +25,7 @@
 #include "canbus.h"
 #include "dash_demo.h"
 #include "can_scan.h"
+#include "obd_poll.h"
 
 
 // =======================================================
@@ -1070,6 +1071,9 @@ void app_main(void) {
         canbus_init();
         xTaskCreatePinnedToCore(canbus_task,"can_rx",4096,NULL,10,NULL,0);
         xTaskCreatePinnedToCore(can_mapping_task,"can_mapping_task",4096,NULL,10,NULL,1);
+        // Fills the gaps GM does not broadcast: fuel level, IAT, boost,
+        // fuel pressure and AFR. This transmits -- see obd_poll.h.
+        obd_poll_start();
     } else {
         xTaskCreatePinnedToCore(tach_task, "tach_task", 4096, NULL, 10, NULL, 0);
         xTaskCreatePinnedToCore(adc_task, "adc_uart_task", 4096, NULL, 5, NULL, 0);

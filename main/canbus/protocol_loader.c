@@ -3,6 +3,7 @@
 #include "canbus.h"
 
 #include "esp_log.h"
+#include "esp_attr.h"
 #include "esp_timer.h"
 #include "cJSON.h"
 
@@ -15,7 +16,10 @@ can_frame_def_t *frame_lookup[CAN_ID_MAX];
 
 static void (*decode_table[CAN_ID_MAX])(uint8_t *data);
 
-can_protocol_t protocols[MAX_PROTOCOLS];
+// Parked in PSRAM: even right-sized this is well over 100KB, which is a lot
+// of internal DRAM to hand to a lookup table that is read a few times per CAN
+// frame. PSRAM latency is irrelevant at that rate.
+EXT_RAM_BSS_ATTR can_protocol_t protocols[MAX_PROTOCOLS];
 static int protocol_hits[MAX_PROTOCOLS];
 
 int protocol_count = 0;
