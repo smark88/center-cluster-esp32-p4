@@ -8,6 +8,7 @@
 #define ODO_NAMESPACE   "odometer"
 #define ODO_KEY_A       "odo_a"
 #define ODO_KEY_B       "odo_b"
+#define ODO_KEY_SEED    "odo_seed"
 
 #define SAVE_INTERVAL_M 100
 
@@ -21,7 +22,10 @@ typedef struct {
 
 static nvs_handle_t odo_handle;
 
-static uint64_t total_meters = 3701491;   // compiled default
+static uint64_t total_meters = (uint64_t)(ODO_SEED_MILES * 1609.344);
+
+// Sub-metre remainder, so low speeds are not truncated away.
+static double   meters_frac = 0.0;
 static uint64_t last_saved_meters = 0;
 static uint32_t current_version = 0;
 static bool use_slot_a = true;
@@ -103,6 +107,31 @@ void odometer_init(void)
         current_version = 1;
     }
 
+    // ---- one-shot seed ----
+    // If ODO_SEED_MILES differs from the seed we last applied, this is a new
+    // seed: take it. Otherwise leave the accumulated value alone.
+    double stored_seed = 0.0;
+    size_t seed_len = sizeof(stored_seed);
+    bool have_seed = (nvs_get_blob(odo_handle, ODO_KEY_SEED,
+                                   &stored_seed, &seed_len) == ESP_OK);
+
+    if (!have_seed || stored_seed != ODO_SEED_MILES) {
+        total_meters = (uint64_t)(ODO_SEED_MILES * 1609.344);
+        meters_frac  = 0.0;
+
+        double seed = ODO_SEED_MILES;
+        ESP_ERROR_CHECK(nvs_set_blob(odo_handle, ODO_KEY_SEED,
+                                     &seed, sizeof(seed)));
+        ESP_ERROR_CHECK(nvs_commit(odo_handle));
+
+        ESP_LOGW(TAG, "Applied new odometer seed: %.1f miles (%llu meters)",
+                 ODO_SEED_MILES, total_meters);
+
+        last_saved_meters = total_meters;
+        odometer_force_save();
+        return;
+    }
+
     last_saved_meters = total_meters;
 }
 
@@ -113,6 +142,19 @@ void odometer_init(void)
 void odometer_add_meters(uint32_t meters)
 {
     total_meters += meters;
+}
+
+void odometer_add_miles(double miles)
+{
+    if (miles <= 0.0) return;
+
+    meters_frac += miles * 1609.344;
+
+    if (meters_frac >= 1.0) {
+        uint64_t whole = (uint64_t)meters_frac;
+        total_meters += whole;
+        meters_frac  -= (double)whole;
+    }
 }
 
 /* ===============================

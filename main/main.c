@@ -562,8 +562,21 @@ void gauge_timer(lv_timer_t * t) {
     displayRPM += 0.20f * (rpmNow - displayRPM);
     ui_dash_set_rpm((int)displayRPM);
 
-    // Speed is not displayed on this gauge -- it goes to the second cluster.
-    // g_speed_mph is still used for the odometer.
+    // Speed is not displayed on this gauge -- it goes to the second cluster,
+    // but it still drives the odometer: distance = mph * elapsed hours.
+    {
+        static int64_t last_odo_us = 0;
+        int64_t now_us = esp_timer_get_time();
+
+        if (last_odo_us != 0) {
+            double dt_hours = (double)(now_us - last_odo_us) / 3600000000.0;
+            float  mph = g_speed_mph;
+
+            if (mph >= SPEED_MIN_VALID_MPH)
+                odometer_add_miles(mph * dt_hours);
+        }
+        last_odo_us = now_us;
+    }
 
     ui_dash_set_mileage(odometer_get_miles());
 
@@ -929,7 +942,6 @@ static void uart_init(uart_port_t uart_num, int txPin, int rxPin, int bufSize, i
 
 static void can_mapping_task(void *arg){
     int64_t last_tx_ms  = 0;
-    int64_t last_odo_ms = 0;
 
     while (1){
         int64_t now_ms = esp_timer_get_time() / 1000;
@@ -941,18 +953,7 @@ static void can_mapping_task(void *arg){
         // kph->mph factor into its own scale.
         g_speed_mph = can_data.speed;
 
-        // ---------- Odometer ----------
-        if (now_ms - last_odo_ms >= 1000){
-            last_odo_ms = now_ms;
-
-            // 1 mph = 0.44704 m/s, and this runs once a second.
-            float meters_per_sec = can_data.speed * 0.44704f;
-
-            uint32_t whole = (uint32_t)meters_per_sec;
-
-            if (whole > 0)
-                odometer_add_meters(whole);
-        }
+        // Odometer is accumulated in gauge_timer from mph * elapsed time.
 
         // ---------- Gauge data ----------
         g_gauge_data.water_temp_f     = can_data.coolant_temp;
