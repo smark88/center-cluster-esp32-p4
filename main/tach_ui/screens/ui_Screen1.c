@@ -35,6 +35,14 @@
 
 #define DIAL_BOX          660   // container that holds ticks + numbers
 
+// Sensor tiles. Width is the constrained axis -- the dial "0" and "7" numbers
+// sit at x = +/-223, so the tiles must stop short of that.
+#define TILE_W            200
+#define TILE_H            78
+#define TILE_DX           107   // right edge lands at 207, clear of the numbers
+#define TILE_ROW1_DY      21
+#define TILE_ROW2_DY      111
+
 // ------------------------------------------------------------------ colors --
 
 #define C_BEZEL      0x131313
@@ -91,12 +99,12 @@ static lv_obj_t *make_label(lv_obj_t *parent, const char *txt,
     return l;
 }
 
-// A 190x66 bordered tile with a muted caption and a large value underneath.
+// A bordered tile with a muted caption and a large value underneath.
 static lv_obj_t *make_tile(lv_obj_t *parent, const char *caption,
                            lv_coord_t dx, lv_coord_t dy)
 {
     lv_obj_t *tile = lv_obj_create(parent);
-    lv_obj_set_size(tile, S(190), S(66));
+    lv_obj_set_size(tile, S(TILE_W), S(TILE_H));
     lv_obj_align(tile, LV_ALIGN_CENTER, dx, dy);
     lv_obj_set_style_radius(tile, S(10), 0);
     lv_obj_set_style_bg_color(tile, lv_color_hex(C_TILE_BG), 0);
@@ -109,16 +117,16 @@ static lv_obj_t *make_tile(lv_obj_t *parent, const char *caption,
 
     lv_obj_t *cap = lv_label_create(tile);
     lv_label_set_text(cap, caption);
-    lv_obj_set_style_text_font(cap, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(cap, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(cap, lv_color_hex(C_MUTED), 0);
     lv_obj_set_style_text_letter_space(cap, S(1), 0);
-    lv_obj_align(cap, LV_ALIGN_TOP_MID, 0, S(5));
+    lv_obj_align(cap, LV_ALIGN_TOP_MID, 0, S(6));
 
     lv_obj_t *val = lv_label_create(tile);
     lv_label_set_text(val, "--");
-    lv_obj_set_style_text_font(val, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(val, &lv_font_montserrat_28, 0);
     lv_obj_set_style_text_color(val, lv_color_white(), 0);
-    lv_obj_align(val, LV_ALIGN_BOTTOM_MID, 0, S(-4));
+    lv_obj_align(val, LV_ALIGN_BOTTOM_MID, 0, S(-6));
 
     return val;   // caller keeps the value label
 }
@@ -294,10 +302,10 @@ void ui_Screen1_screen_init(void)
     lv_obj_align(ui_label_rpm_value, LV_ALIGN_CENTER, 0, S(-75));
 
     // ---- Four sensor tiles ----
-    ui_val_oil_psi  = make_tile(ui_Screen1, "OIL PSI",  S(-108), S(28));
-    ui_val_water    = make_tile(ui_Screen1, "WATER",    S(108),  S(28));
-    ui_val_oil_temp = make_tile(ui_Screen1, "OIL TEMP", S(-108), S(104));
-    ui_val_trans    = make_tile(ui_Screen1, "TRANS",    S(108),  S(104));
+    ui_val_oil_psi  = make_tile(ui_Screen1, "OIL PSI",  S(-TILE_DX), S(TILE_ROW1_DY));
+    ui_val_water    = make_tile(ui_Screen1, "WATER",     S(TILE_DX),  S(TILE_ROW1_DY));
+    ui_val_oil_temp = make_tile(ui_Screen1, "OIL TEMP", S(-TILE_DX), S(TILE_ROW2_DY));
+    ui_val_trans    = make_tile(ui_Screen1, "TRANS",     S(TILE_DX),  S(TILE_ROW2_DY));
 
     // ---- Mileage ----
     make_label(ui_Screen1, "MILEAGE", &lv_font_montserrat_14, C_MUTED, 0, S(169));
