@@ -565,6 +565,7 @@ void gauge_timer(lv_timer_t * t) {
     g_gauge_data.afr              = demo.afr;
     g_gauge_data.boost_psi        = demo.boost_psi;
     ui_dash_set_gear(demo.gear);
+    ui_dash_set_drive_gear(demo.drive_gear);
 #endif
 
     // Smooth the needle so it sweeps instead of snapping.

@@ -40,6 +40,7 @@ extern lv_obj_t *ui_Screen1;
 // Driven from main.c
 extern lv_obj_t *ui_speed_arc;           // lv_arc, range 0..DIAL_MAX_MPH
 extern lv_obj_t *ui_label_mph_value;
+extern lv_obj_t *ui_label_gear_value;
 extern lv_obj_t *ui_val_iat;
 extern lv_obj_t *ui_val_fuel_psi;
 extern lv_obj_t *ui_val_afr;
@@ -58,8 +59,14 @@ void ui_dash_set_fuel_psi(float psi);
 void ui_dash_set_afr(float afr);
 void ui_dash_set_boost_psi(float psi);
 
+// PRNDM selector row along the bottom.
 // One of 'P' 'R' 'N' 'D' 'M'. Anything else clears the selection.
 void ui_dash_set_gear(char gear);
+
+// Which gear the transmission is actually in, shown up top.
+// 1..8 draws the number, -1 draws "R", anything else draws "--".
+#define GEAR_REVERSE (-1)
+void ui_dash_set_drive_gear(int gear);
 
 #ifdef __cplusplus
 } /*extern "C"*/

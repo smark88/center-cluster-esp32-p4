@@ -39,7 +39,8 @@ typedef struct {
     float fuel_psi;
     float afr;
     float boost_psi;
-    char  gear;          // one of P R N D M
+    char  gear;          // selector: one of P R N D M
+    int   drive_gear;    // 1..8, or -1 for reverse
 } dash_demo_t;
 
 // Call once at startup to set the time origin.

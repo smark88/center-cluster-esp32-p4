@@ -8,5 +8,5 @@
     "IDF_TOOLS_PATH": "/Users/smark/.espressif/tools",
     "IDF_PYTHON_ENV_PATH": "/Users/smark/.espressif/tools/python/v5.4.4/venv"
   },
-  "idf.port": "/dev/tty.usbmodem5C371864701"
+  "idf.port": "/dev/tty.usbmodem5B910329611"
 }

@@ -61,6 +61,12 @@ void dash_demo_sample(dash_demo_t *out)
         out->gear = sel[((int)(t / 3.0f)) % 5];
     }
 
+    // Climb 1..8 then drop into reverse, so every state gets shown.
+    {
+        int step = ((int)(t / 2.0f)) % 9;
+        out->drive_gear = (step == 8) ? -1 : (step + 1);
+    }
+
 #if DEMO_EXERCISE_WARNINGS
     // Drive one channel past its limit at a time, then a quiet phase, so each
     // tile can be seen flashing on its own. Offsets are taken from the real

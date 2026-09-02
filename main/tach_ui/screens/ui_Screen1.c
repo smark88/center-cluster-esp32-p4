@@ -77,6 +77,7 @@
 lv_obj_t *ui_Screen1 = NULL;
 lv_obj_t *ui_speed_arc = NULL;
 lv_obj_t *ui_label_mph_value = NULL;
+lv_obj_t *ui_label_gear_value = NULL;
 lv_obj_t *ui_val_iat = NULL;
 lv_obj_t *ui_val_fuel_psi = NULL;
 lv_obj_t *ui_val_afr = NULL;
@@ -375,6 +376,15 @@ void ui_Screen1_screen_init(void)
     // ---- Tick marks and numbers ----
     build_dial(ui_Screen1);
 
+    // ---- Which gear the box is in, up top ----
+    make_label(ui_Screen1, "GEAR", &lv_font_montserrat_14, C_MUTED, 0, S(-205));
+
+    ui_label_gear_value = lv_label_create(ui_Screen1);
+    lv_label_set_text(ui_label_gear_value, "--");
+    lv_obj_set_style_text_font(ui_label_gear_value, &lv_font_montserrat_44, 0);
+    lv_obj_set_style_text_color(ui_label_gear_value, lv_color_white(), 0);
+    lv_obj_align(ui_label_gear_value, LV_ALIGN_CENTER, 0, S(-168));
+
     // ---- Speed readout ----
     make_label(ui_Screen1, "mph", &lv_font_montserrat_20, C_MUTED, 0, S(-119));
 
@@ -385,8 +395,6 @@ void ui_Screen1_screen_init(void)
     lv_obj_align(ui_label_mph_value, LV_ALIGN_CENTER, 0, S(-62));
 
     // ---- Four sensor tiles ----
-    make_label(ui_Screen1, "GEAR", &lv_font_montserrat_14, C_MUTED, 0, S(-20));
-
     ui_val_iat      = make_tile(ui_Screen1, "IAT",      S(-TILE_DX), S(TILE_ROW1_DY), TILE_IAT);
     ui_val_fuel_psi = make_tile(ui_Screen1, "FUEL PSI",  S(TILE_DX), S(TILE_ROW1_DY), TILE_FUEL_PSI);
     ui_val_afr      = make_tile(ui_Screen1, "AFR",      S(-TILE_DX), S(TILE_ROW2_DY), TILE_AFR);
@@ -405,6 +413,7 @@ void ui_Screen1_screen_destroy(void)
     ui_Screen1 = NULL;
     ui_speed_arc = NULL;
     ui_label_mph_value = NULL;
+    ui_label_gear_value = NULL;
     ui_val_iat = NULL;
     ui_val_fuel_psi = NULL;
     ui_val_afr = NULL;
@@ -481,6 +490,19 @@ void ui_dash_set_afr(float afr)
 void ui_dash_set_boost_psi(float psi)
 {
     set_value(ui_val_boost, psi, "%.1f");
+}
+
+void ui_dash_set_drive_gear(int gear)
+{
+    if (!ui_label_gear_value) return;
+
+    char buf[4];
+    if (gear == GEAR_REVERSE)          snprintf(buf, sizeof(buf), "R");
+    else if (gear >= 1 && gear <= 8)   snprintf(buf, sizeof(buf), "%d", gear);
+    else                               snprintf(buf, sizeof(buf), "--");
+
+    if (strcmp(lv_label_get_text(ui_label_gear_value), buf) != 0)
+        lv_label_set_text(ui_label_gear_value, buf);
 }
 
 void ui_dash_set_gear(char gear)
