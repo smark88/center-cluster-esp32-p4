@@ -16,10 +16,15 @@
 #define UI_BASE_RES 720
 #define S(x)  ((lv_coord_t)(((int32_t)(x) * (int32_t)LV_HOR_RES) / UI_BASE_RES))
 
-// Dial sweep: 0 sits lower-left, numbers climb over the top, full scale sits
-// lower-right. LVGL angles are clockwise with 0 at 3 o'clock.
-#define DIAL_START_ANGLE  150.0f
-#define DIAL_SWEEP        240.0f
+// Dial sweep: 0 sits at the lower left, numbers climb over the top, full
+// scale sits at the lower right. LVGL angles are clockwise with 0 at 3
+// o'clock, and the sweep is centred on 270 (straight up).
+//
+// 200 degrees rather than 240: at 240 the end numbers landed at y=+124, which
+// put them behind the sensor tiles. Pulling the ends up to 170/10 degrees
+// moves them to y=+43 and clears the tile edge by 11px.
+#define DIAL_START_ANGLE  170.0f
+#define DIAL_SWEEP        200.0f
 
 #define DIAL_MAJORS       (DIAL_MAX_MPH / DIAL_MPH_PER_MAJOR)
 #define TICKS_PER_MAJOR   4                       // a minor tick every 5 mph

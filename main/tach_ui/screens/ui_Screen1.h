@@ -13,7 +13,7 @@ extern "C" {
 
 // Full-scale speed on the outer dial. Numbers are drawn every
 // DIAL_MPH_PER_MAJOR, so 180/20 gives 0..180 in twenties.
-#define DIAL_MAX_MPH        180
+#define DIAL_MAX_MPH        160
 #define DIAL_MPH_PER_MAJOR  20
 
 // ---------------------------------------------------------------------------
