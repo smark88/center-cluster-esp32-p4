@@ -25,7 +25,7 @@ extern lv_anim_t * test_Animation( lv_obj_t *TargetObject, int delay);
 extern lv_obj_t *ui____initial_actions0;
 
 // IMAGES AND IMAGE SETS
-LV_IMG_DECLARE( ui_img_c5r);        // boot splash
+LV_IMG_DECLARE( skull_blue);        // boot splash
 
 // FONTS
 // The dash uses the built-in Montserrat faces (enabled via sdkconfig) so the

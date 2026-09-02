@@ -1,4 +1,4 @@
-// Center cluster dash screen.
+// Gauge two -- speedometer cluster.
 // Drawn entirely with LVGL vectors (no background bitmap) so it scales to any
 // round panel size -- 720x720 (4in) and 800x800 (3.4in) both work.
 
@@ -11,27 +11,25 @@ extern "C" {
 
 #include "lvgl.h"
 
-// Full-scale RPM shown on the outer dial. Numbers 0..(TACH_MAX_RPM/1000) are
-// drawn automatically, so bumping this to 9000 gives a 0-9 dial.
-#define TACH_MAX_RPM      7000
-// RPM at which the dial ticks and the top number turn red.
-#define TACH_REDLINE_RPM  6400
+// Full-scale speed on the outer dial. Numbers are drawn every
+// DIAL_MPH_PER_MAJOR, so 180/20 gives 0..180 in twenties.
+#define DIAL_MAX_MPH        180
+#define DIAL_MPH_PER_MAJOR  20
 
 // ---------------------------------------------------------------------------
 // WARNING THRESHOLDS
 // A tile flashes red while its reading is outside these limits.
 // ---------------------------------------------------------------------------
-#define WARN_OIL_PSI_MIN   15.0f    // flash below this
-#define WARN_OIL_TEMP_MAX  290.0f   // flash above this
-#define WARN_WATER_MAX     245.0f   // flash above this
-#define WARN_TRANS_MAX     260.0f   // flash above this
+#define WARN_IAT_MAX        170.0f   // flash above this
+#define WARN_FUEL_PSI_MIN   40.0f    // flash below this
+#define WARN_AFR_MAX        14.0f    // flash above this, but only under load
 
-// Oil pressure is 0 with the engine off, so the low-pressure warning is
-// suppressed until the engine is actually turning.
-#define WARN_OIL_PSI_MIN_RPM 400
+// Lean only matters under load -- cruise and overrun run lean by design, so
+// the AFR warning is gated on the engine actually pulling.
+#define WARN_AFR_MIN_RPM    2000
 
 // Flash half-period.
-#define WARN_FLASH_MS      450
+#define WARN_FLASH_MS       450
 
 // SCREEN: ui_Screen1
 void ui_Screen1_screen_init(void);
@@ -40,25 +38,28 @@ void ui_Screen1_screen_destroy(void);
 extern lv_obj_t *ui_Screen1;
 
 // Driven from main.c
-extern lv_obj_t *ui_rpm_arc;             // lv_arc, range 0..TACH_MAX_RPM
-extern lv_obj_t *ui_fuel_arc;            // lv_arc, range 0..100
-extern lv_obj_t *ui_label_rpm_value;
-extern lv_obj_t *ui_label_odometer_value;
-extern lv_obj_t *ui_val_oil_psi;
-extern lv_obj_t *ui_val_water;
-extern lv_obj_t *ui_val_oil_temp;
-extern lv_obj_t *ui_val_trans;
+extern lv_obj_t *ui_speed_arc;           // lv_arc, range 0..DIAL_MAX_MPH
+extern lv_obj_t *ui_label_mph_value;
+extern lv_obj_t *ui_val_iat;
+extern lv_obj_t *ui_val_fuel_psi;
+extern lv_obj_t *ui_val_afr;
+extern lv_obj_t *ui_val_boost;
 
 // Convenience setters. Pass NAN for "no data" and the tile shows "--".
-// ui_dash_set_rpm drives both the outer arc and the big centre readout.
-// Speed is NOT shown on this gauge -- it lives on the second cluster.
+// ui_dash_set_speed_mph drives both the outer arc and the big centre readout.
+void ui_dash_set_speed_mph(float mph);
+
+// RPM is not displayed here -- it lives on gauge one -- but it gates the AFR
+// warning, so feed it anyway.
 void ui_dash_set_rpm(int rpm);
-void ui_dash_set_fuel_pct(float pct);
-void ui_dash_set_oil_psi(float psi);
-void ui_dash_set_water_f(float degf);
-void ui_dash_set_oil_temp_f(float degf);
-void ui_dash_set_trans_f(float degf);
-void ui_dash_set_mileage(double miles);
+
+void ui_dash_set_iat_f(float degf);
+void ui_dash_set_fuel_psi(float psi);
+void ui_dash_set_afr(float afr);
+void ui_dash_set_boost_psi(float psi);
+
+// One of 'P' 'R' 'N' 'D' 'M'. Anything else clears the selection.
+void ui_dash_set_gear(char gear);
 
 #ifdef __cplusplus
 } /*extern "C"*/

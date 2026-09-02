@@ -35,6 +35,11 @@ typedef struct {
     float water_f;
     float oil_temp_f;
     float trans_f;
+    float iat_f;
+    float fuel_psi;
+    float afr;
+    float boost_psi;
+    char  gear;          // one of P R N D M
 } dash_demo_t;
 
 // Call once at startup to set the time origin.

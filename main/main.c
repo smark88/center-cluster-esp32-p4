@@ -247,6 +247,7 @@ typedef struct {
     float oil_temp_f;
     float water_temp_f;
     float trans_temp_f;      // NAN until a CAN protocol supplies "trans_temp"
+    float iat_f;             // intake air temp
     float oil_pressure_psi;
     float fuel_pressure_psi;
     float fuel_level_pct;
@@ -559,6 +560,11 @@ void gauge_timer(lv_timer_t * t) {
     g_gauge_data.water_temp_f     = demo.water_f;
     g_gauge_data.oil_temp_f       = demo.oil_temp_f;
     g_gauge_data.trans_temp_f     = demo.trans_f;
+    g_gauge_data.iat_f            = demo.iat_f;
+    g_gauge_data.fuel_pressure_psi = demo.fuel_psi;
+    g_gauge_data.afr              = demo.afr;
+    g_gauge_data.boost_psi        = demo.boost_psi;
+    ui_dash_set_gear(demo.gear);
 #endif
 
     // Smooth the needle so it sweeps instead of snapping.
@@ -566,33 +572,33 @@ void gauge_timer(lv_timer_t * t) {
     // same as it was at the old 10ms tick.
     static float displayRPM = 0.0f;
     displayRPM += 0.55f * (rpmNow - displayRPM);
-    ui_dash_set_rpm((int)displayRPM);
 
-    // Speed is not displayed on this gauge -- it goes to the second cluster,
-    // but it still drives the odometer: distance = mph * elapsed hours.
+    // Speed drives the dial and the big centre readout on this gauge, and
+    // also the odometer: distance = mph * elapsed hours.
+    float speed_mph = g_speed_mph;
+    if (speed_mph < SPEED_MIN_VALID_MPH)
+        speed_mph = 0.0f;
+    ui_dash_set_speed_mph(speed_mph);
+
     {
         static int64_t last_odo_us = 0;
         int64_t now_us = esp_timer_get_time();
 
-        if (last_odo_us != 0) {
+        if (last_odo_us != 0 && speed_mph > 0.0f) {
             double dt_hours = (double)(now_us - last_odo_us) / 3600000000.0;
-            float  mph = g_speed_mph;
-
-            if (mph >= SPEED_MIN_VALID_MPH)
-                odometer_add_miles(mph * dt_hours);
+            odometer_add_miles(speed_mph * dt_hours);
         }
         last_odo_us = now_us;
     }
 
-    ui_dash_set_mileage(odometer_get_miles());
+    // Not shown here -- gauge one has the tacho -- but it gates the AFR alarm.
+    ui_dash_set_rpm((int)displayRPM);
 
     // The four tiles. Any value left at NAN renders as "--".
-    ui_dash_set_oil_psi(g_gauge_data.oil_pressure_psi);
-    ui_dash_set_water_f(g_gauge_data.water_temp_f);
-    ui_dash_set_oil_temp_f(g_gauge_data.oil_temp_f);
-    ui_dash_set_trans_f(g_gauge_data.trans_temp_f);
-
-    ui_dash_set_fuel_pct(g_gauge_data.fuel_level_pct);
+    ui_dash_set_iat_f(g_gauge_data.iat_f);
+    ui_dash_set_fuel_psi(g_gauge_data.fuel_pressure_psi);
+    ui_dash_set_afr(g_gauge_data.afr);
+    ui_dash_set_boost_psi(g_gauge_data.boost_psi);
 }
 
 //------------------------------------------------------------------------//
@@ -967,6 +973,7 @@ static void can_mapping_task(void *arg){
         g_gauge_data.oil_temp_f       = can_data.oil_temp;
         g_gauge_data.trans_temp_f     = can_data.trans_temp;
         g_gauge_data.fuel_level_pct   = can_data.fuel_level;
+        g_gauge_data.iat_f            = can_data.air_temp;
         g_gauge_data.afr = can_data.air_fuel_ratio;
         g_gauge_data.boost_psi = can_data.boost;
         g_gauge_data.fuel_comp = can_data.fuel_comp;

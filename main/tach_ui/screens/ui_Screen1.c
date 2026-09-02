@@ -1,4 +1,4 @@
-// Center cluster dash screen.
+// Gauge two -- speedometer cluster.
 //
 // Everything here is drawn with LVGL vectors instead of a background bitmap,
 // so the layout follows the panel resolution: all geometry is authored against
@@ -16,47 +16,48 @@
 #define UI_BASE_RES 720
 #define S(x)  ((lv_coord_t)(((int32_t)(x) * (int32_t)LV_HOR_RES) / UI_BASE_RES))
 
-// Dial sweep: 0 sits lower-left, numbers climb over the top, max sits
+// Dial sweep: 0 sits lower-left, numbers climb over the top, full scale sits
 // lower-right. LVGL angles are clockwise with 0 at 3 o'clock.
 #define DIAL_START_ANGLE  150.0f
 #define DIAL_SWEEP        240.0f
 
-#define TACH_MAJORS       (TACH_MAX_RPM / 1000)
-#define TICKS_PER_MAJOR   5
-#define TICK_COUNT        (TACH_MAJORS * TICKS_PER_MAJOR + 1)
+#define DIAL_MAJORS       (DIAL_MAX_MPH / DIAL_MPH_PER_MAJOR)
+#define TICKS_PER_MAJOR   4                       // a minor tick every 5 mph
+#define TICK_COUNT        (DIAL_MAJORS * TICKS_PER_MAJOR + 1)
 
-// Radii (720-space)
+// Radii (720-space). The numbers sit further in than on gauge one, and the
+// major ticks are shorter, because "180" is three digits wide and would
+// otherwise run into the tick marks.
 #define R_TICK_OUTER      300
-#define R_TICK_MAJOR_IN   274
-#define R_TICK_MINOR_IN   287
-#define R_NUMBERS         257
-#define R_RPM_ARC         316
-#define RPM_ARC_W         18    // was 12; thickened by half
-#define R_FUEL_ARC        270
-#define R_FUEL_LABELS     292
+#define R_TICK_MAJOR_IN   280
+#define R_TICK_MINOR_IN   290
+#define R_NUMBERS         248
+#define R_SPEED_ARC       316
+#define SPEED_ARC_W       18
 
 #define DIAL_BOX          660   // container that holds ticks + numbers
 
-// Sensor tiles. Width is the constrained axis -- the dial "0" and "7" numbers
-// sit at x = +/-223, so the tiles must stop short of that.
+// Sensor tiles. Width is the constrained axis -- the dial numbers sit near
+// x = +/-220, so the tiles must stop short of that.
 #define TILE_W            200
 #define TILE_H            78
-#define TILE_DX           107   // right edge lands at 207, clear of the numbers
-#define TILE_ROW1_DY      21
-#define TILE_ROW2_DY      111
+#define TILE_DX           107
+#define TILE_ROW1_DY      28
+#define TILE_ROW2_DY      104
+
 // A flashing tile thickens both ways: the border grows inward and a ring is
-// drawn outward, giving one continuous band of about
-// TILE_WARN_BORDER_W + TILE_WARN_RING_W pixels.
-//
-// LVGL draws borders inside the object bounds, so a fatter border would
-// normally shrink the content area and make the caption and value jump on
-// every flash. Padding is set to the complement of the border width, keeping
-// the content inset fixed at TILE_WARN_BORDER_W in both states, so nothing
-// reflows.
-#define TILE_BORDER_W       2   // resting, inward
-#define TILE_WARN_BORDER_W  4   // alarming, inward
-#define TILE_WARN_RING_W    4   // alarming, outward (outline, no reflow)
+// drawn outward, giving one continuous band. Padding is set to the complement
+// of the border width so the content inset never changes and nothing reflows.
+#define TILE_BORDER_W       2
+#define TILE_WARN_BORDER_W  4
+#define TILE_WARN_RING_W    4
 #define TILE_PAD_REST       (TILE_WARN_BORDER_W - TILE_BORDER_W)
+
+// PRNDM selector along the bottom.
+#define GEAR_BOX_W        72
+#define GEAR_BOX_H        52
+#define GEAR_PITCH        88
+#define GEAR_DY           216
 
 // ------------------------------------------------------------------ colors --
 
@@ -69,28 +70,27 @@
 #define C_MUTED      0x8A9099
 #define C_TILE_LINE  0x2A2E33
 #define C_TILE_BG    0x0B0D0F
+#define C_GEAR_ON_BG 0x1C2026
 
 // ----------------------------------------------------------------- objects --
 
 lv_obj_t *ui_Screen1 = NULL;
-lv_obj_t *ui_rpm_arc = NULL;
-lv_obj_t *ui_fuel_arc = NULL;
-lv_obj_t *ui_label_rpm_value = NULL;
-lv_obj_t *ui_label_odometer_value = NULL;
-lv_obj_t *ui_val_oil_psi = NULL;
-lv_obj_t *ui_val_water = NULL;
-lv_obj_t *ui_val_oil_temp = NULL;
-lv_obj_t *ui_val_trans = NULL;
+lv_obj_t *ui_speed_arc = NULL;
+lv_obj_t *ui_label_mph_value = NULL;
+lv_obj_t *ui_val_iat = NULL;
+lv_obj_t *ui_val_fuel_psi = NULL;
+lv_obj_t *ui_val_afr = NULL;
+lv_obj_t *ui_val_boost = NULL;
 
 // lv_line keeps a pointer to the caller's points, so they must outlive it.
 static lv_point_t s_tick_pts[TICK_COUNT][2];
 
-// ------------------------------------------------------------ tile alarms --
+// ------------------------------------------------------------- tile alarms --
 
-enum { TILE_OIL_PSI = 0, TILE_WATER, TILE_OIL_TEMP, TILE_TRANS, TILE_COUNT };
+enum { TILE_IAT = 0, TILE_FUEL_PSI, TILE_AFR, TILE_BOOST, TILE_COUNT };
 
 typedef struct {
-    lv_obj_t *tile;     // for the border
+    lv_obj_t *tile;     // for the border and ring
     lv_obj_t *value;    // for the number
     bool      alarm;    // currently out of range
     bool      lit;      // red is currently applied
@@ -98,6 +98,15 @@ typedef struct {
 
 static tile_t s_tiles[TILE_COUNT];
 static int    s_last_rpm = 0;
+
+// ----------------------------------------------------------- gear selector --
+
+static const char GEAR_LETTERS[] = "PRNDM";
+#define GEAR_COUNT 5
+
+static lv_obj_t *s_gear_box[GEAR_COUNT];
+static lv_obj_t *s_gear_lbl[GEAR_COUNT];
+static int       s_gear_sel = -1;
 
 // ----------------------------------------------------------------- helpers --
 
@@ -146,6 +155,7 @@ static lv_obj_t *make_tile(lv_obj_t *parent, const char *caption,
     lv_obj_set_style_outline_pad(tile, 0, 0);
     lv_obj_set_style_outline_color(tile, lv_color_hex(C_RED), 0);
     lv_obj_set_style_outline_opa(tile, LV_OPA_TRANSP, 0);
+
     lv_obj_set_style_pad_all(tile, S(TILE_PAD_REST), 0);
     lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(tile, LV_OBJ_FLAG_CLICKABLE);
@@ -265,13 +275,11 @@ static void build_dial(lv_obj_t *parent)
     // Ticks
     for (int i = 0; i < TICK_COUNT; i++) {
         float deg = DIAL_START_ANGLE + (DIAL_SWEEP * i) / (TICK_COUNT - 1);
-        int   rpm = (TACH_MAX_RPM * i) / (TICK_COUNT - 1);
         bool  major = (i % TICKS_PER_MAJOR) == 0;
-        bool  hot   = rpm >= TACH_REDLINE_RPM;
 
         float r_in = major ? S(R_TICK_MAJOR_IN) : S(R_TICK_MINOR_IN);
 
-        polar(c, r_in,             deg, &s_tick_pts[i][0].x, &s_tick_pts[i][0].y);
+        polar(c, r_in,                   deg, &s_tick_pts[i][0].x, &s_tick_pts[i][0].y);
         polar(c, (float)S(R_TICK_OUTER), deg, &s_tick_pts[i][1].x, &s_tick_pts[i][1].y);
 
         lv_obj_t *ln = lv_line_create(dial);
@@ -279,22 +287,51 @@ static void build_dial(lv_obj_t *parent)
         lv_obj_set_pos(ln, 0, 0);
         lv_obj_set_style_line_width(ln, major ? S(5) : S(3), 0);
         lv_obj_set_style_line_color(
-            ln, lv_color_hex(hot ? C_RED : (major ? C_TICK_MAJOR : C_TICK_MINOR)), 0);
+            ln, lv_color_hex(major ? C_TICK_MAJOR : C_TICK_MINOR), 0);
         lv_obj_set_style_line_rounded(ln, false, 0);
     }
 
-    // Numbers (0..TACH_MAJORS), drawn as labels so the redline one can be red.
-    for (int n = 0; n <= TACH_MAJORS; n++) {
-        float deg = DIAL_START_ANGLE + (DIAL_SWEEP * n) / TACH_MAJORS;
+    // Numbers, 0 .. DIAL_MAX_MPH in steps of DIAL_MPH_PER_MAJOR.
+    for (int n = 0; n <= DIAL_MAJORS; n++) {
+        float deg = DIAL_START_ANGLE + (DIAL_SWEEP * n) / DIAL_MAJORS;
         lv_coord_t x, y;
         polar(0, (float)S(R_NUMBERS), deg, &x, &y);
 
-        char txt[4];
-        snprintf(txt, sizeof(txt), "%d", n);
+        char txt[6];
+        snprintf(txt, sizeof(txt), "%d", n * DIAL_MPH_PER_MAJOR);
 
-        bool hot = (n * 1000) >= TACH_REDLINE_RPM;
-        make_label(dial, txt, &lv_font_montserrat_28,
-                   hot ? C_RED : C_TICK_MAJOR, x, y);
+        make_label(dial, txt, &lv_font_montserrat_28, C_TICK_MAJOR, x, y);
+    }
+}
+
+// ----------------------------------------------------------- gear selector --
+
+static void build_gear_selector(lv_obj_t *parent)
+{
+    const lv_coord_t first = -(GEAR_PITCH * (GEAR_COUNT - 1)) / 2;
+
+    for (int i = 0; i < GEAR_COUNT; i++) {
+        lv_obj_t *box = lv_obj_create(parent);
+        lv_obj_set_size(box, S(GEAR_BOX_W), S(GEAR_BOX_H));
+        lv_obj_align(box, LV_ALIGN_CENTER, S(first + i * GEAR_PITCH), S(GEAR_DY));
+        lv_obj_set_style_radius(box, S(8), 0);
+        lv_obj_set_style_bg_color(box, lv_color_hex(C_TILE_BG), 0);
+        lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(box, lv_color_hex(C_TILE_LINE), 0);
+        lv_obj_set_style_border_width(box, S(TILE_BORDER_W), 0);
+        lv_obj_set_style_pad_all(box, 0, 0);
+        lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_clear_flag(box, LV_OBJ_FLAG_CLICKABLE);
+
+        char txt[2] = { GEAR_LETTERS[i], 0 };
+        lv_obj_t *l = lv_label_create(box);
+        lv_label_set_text(l, txt);
+        lv_obj_set_style_text_font(l, &lv_font_montserrat_28, 0);
+        lv_obj_set_style_text_color(l, lv_color_hex(C_MUTED), 0);
+        lv_obj_center(l);
+
+        s_gear_box[i] = box;
+        s_gear_lbl[i] = l;
     }
 }
 
@@ -312,118 +349,53 @@ void ui_Screen1_screen_init(void)
     make_disc(ui_Screen1, S(720), C_BEZEL);
     make_disc(ui_Screen1, S(636), C_FACE);
 
-    // ---- RPM sweep, sitting just outside the tick track ----
-    ui_rpm_arc = lv_arc_create(ui_Screen1);
-    lv_obj_set_size(ui_rpm_arc, S(2 * R_RPM_ARC + RPM_ARC_W), S(2 * R_RPM_ARC + RPM_ARC_W));
-    lv_obj_center(ui_rpm_arc);
-    lv_arc_set_rotation(ui_rpm_arc, 0);
-    lv_arc_set_bg_angles(ui_rpm_arc, (uint16_t)DIAL_START_ANGLE,
+    // ---- Speed sweep, sitting just outside the tick track ----
+    ui_speed_arc = lv_arc_create(ui_Screen1);
+    lv_obj_set_size(ui_speed_arc, S(2 * R_SPEED_ARC + SPEED_ARC_W),
+                                  S(2 * R_SPEED_ARC + SPEED_ARC_W));
+    lv_obj_center(ui_speed_arc);
+    lv_arc_set_rotation(ui_speed_arc, 0);
+    lv_arc_set_bg_angles(ui_speed_arc, (uint16_t)DIAL_START_ANGLE,
                          (uint16_t)fmodf(DIAL_START_ANGLE + DIAL_SWEEP, 360.0f));
-    lv_arc_set_range(ui_rpm_arc, 0, TACH_MAX_RPM);
-    lv_arc_set_value(ui_rpm_arc, 0);
+    lv_arc_set_range(ui_speed_arc, 0, DIAL_MAX_MPH);
+    lv_arc_set_value(ui_speed_arc, 0);
 
-    lv_obj_set_style_arc_width(ui_rpm_arc, S(RPM_ARC_W), LV_PART_MAIN);
-    lv_obj_set_style_arc_color(ui_rpm_arc, lv_color_hex(C_TRACK), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(ui_rpm_arc, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(ui_rpm_arc, 0, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(ui_speed_arc, S(SPEED_ARC_W), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(ui_speed_arc, lv_color_hex(C_TRACK), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(ui_speed_arc, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(ui_speed_arc, 0, LV_PART_MAIN);
 
-    lv_obj_set_style_arc_width(ui_rpm_arc, S(RPM_ARC_W), LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(ui_rpm_arc, lv_color_hex(0x28FF00), LV_PART_INDICATOR);
-    lv_obj_set_style_arc_rounded(ui_rpm_arc, false, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(ui_speed_arc, S(SPEED_ARC_W), LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(ui_speed_arc, lv_color_hex(0x28FF00), LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(ui_speed_arc, false, LV_PART_INDICATOR);
 
-    lv_obj_remove_style(ui_rpm_arc, NULL, LV_PART_KNOB);
-    lv_obj_clear_flag(ui_rpm_arc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_style(ui_speed_arc, NULL, LV_PART_KNOB);
+    lv_obj_clear_flag(ui_speed_arc, LV_OBJ_FLAG_CLICKABLE);
 
     // ---- Tick marks and numbers ----
     build_dial(ui_Screen1);
 
-    // ---- Fuel band across the bottom: E on the right, F on the left ----
-    // Static reserve marker first so the live bar draws over it.
-    lv_obj_t *reserve = lv_arc_create(ui_Screen1);
-    lv_obj_set_size(reserve, S(2 * R_FUEL_ARC + 20), S(2 * R_FUEL_ARC + 20));
-    lv_obj_center(reserve);
-    lv_arc_set_rotation(reserve, 0);
-    lv_arc_set_bg_angles(reserve, 55, 69);
-    lv_obj_set_style_arc_width(reserve, S(20), LV_PART_MAIN);
-    lv_obj_set_style_arc_color(reserve, lv_color_hex(C_RED), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(reserve, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(reserve, 0, LV_PART_MAIN);
-    lv_obj_remove_style(reserve, NULL, LV_PART_INDICATOR);
-    lv_obj_remove_style(reserve, NULL, LV_PART_KNOB);
-    lv_obj_clear_flag(reserve, LV_OBJ_FLAG_CLICKABLE);
+    // ---- Speed readout ----
+    make_label(ui_Screen1, "mph", &lv_font_montserrat_20, C_MUTED, 0, S(-119));
 
-    ui_fuel_arc = lv_arc_create(ui_Screen1);
-    lv_obj_set_size(ui_fuel_arc, S(2 * R_FUEL_ARC + 20), S(2 * R_FUEL_ARC + 20));
-    lv_obj_center(ui_fuel_arc);
-    lv_arc_set_rotation(ui_fuel_arc, 0);
-    lv_arc_set_bg_angles(ui_fuel_arc, 55, 125);
-    lv_arc_set_range(ui_fuel_arc, 0, 100);
-    lv_arc_set_value(ui_fuel_arc, 0);
-
-    lv_obj_set_style_arc_width(ui_fuel_arc, S(20), LV_PART_MAIN);
-    lv_obj_set_style_arc_color(ui_fuel_arc, lv_color_hex(C_TRACK), LV_PART_MAIN);
-    lv_obj_set_style_arc_opa(ui_fuel_arc, LV_OPA_60, LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(ui_fuel_arc, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(ui_fuel_arc, 0, LV_PART_MAIN);
-
-    lv_obj_set_style_arc_width(ui_fuel_arc, S(20), LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(ui_fuel_arc, lv_color_hex(0xE8E8E8), LV_PART_INDICATOR);
-    lv_obj_set_style_arc_rounded(ui_fuel_arc, false, LV_PART_INDICATOR);
-
-    lv_obj_remove_style(ui_fuel_arc, NULL, LV_PART_KNOB);
-    lv_obj_clear_flag(ui_fuel_arc, LV_OBJ_FLAG_CLICKABLE);
-
-    // F / E, sitting just outside the band
-    {
-        lv_coord_t fx, fy, ex, ey;
-        polar(0, (float)S(R_FUEL_LABELS), 125.0f, &fx, &fy);
-        polar(0, (float)S(R_FUEL_LABELS),  55.0f, &ex, &ey);
-        make_label(ui_Screen1, "F", &lv_font_montserrat_22, 0xFFFFFF, fx, fy);
-        make_label(ui_Screen1, "E", &lv_font_montserrat_22, 0xFFFFFF, ex, ey);
-    }
-
-    // ---- RPM readout (speed lives on the second cluster) ----
-    make_label(ui_Screen1, "rpm", &lv_font_montserrat_20, C_MUTED, 0, S(-142));
-
-    ui_label_rpm_value = lv_label_create(ui_Screen1);
-    lv_label_set_text(ui_label_rpm_value, "--");
-    lv_obj_set_style_text_font(ui_label_rpm_value, &ui_font_rpm_96, 0);
-    lv_obj_set_style_text_color(ui_label_rpm_value, lv_color_white(), 0);
-    lv_obj_align(ui_label_rpm_value, LV_ALIGN_CENTER, 0, S(-75));
+    ui_label_mph_value = lv_label_create(ui_Screen1);
+    lv_label_set_text(ui_label_mph_value, "--");
+    lv_obj_set_style_text_font(ui_label_mph_value, &ui_font_rpm_96, 0);
+    lv_obj_set_style_text_color(ui_label_mph_value, lv_color_white(), 0);
+    lv_obj_align(ui_label_mph_value, LV_ALIGN_CENTER, 0, S(-62));
 
     // ---- Four sensor tiles ----
-    ui_val_oil_psi  = make_tile(ui_Screen1, "OIL PSI",  S(-TILE_DX), S(TILE_ROW1_DY), TILE_OIL_PSI);
-    ui_val_water    = make_tile(ui_Screen1, "WATER",     S(TILE_DX),  S(TILE_ROW1_DY), TILE_WATER);
-    ui_val_oil_temp = make_tile(ui_Screen1, "OIL TEMP", S(-TILE_DX), S(TILE_ROW2_DY), TILE_OIL_TEMP);
-    ui_val_trans    = make_tile(ui_Screen1, "TRANS",     S(TILE_DX),  S(TILE_ROW2_DY), TILE_TRANS);
+    make_label(ui_Screen1, "GEAR", &lv_font_montserrat_14, C_MUTED, 0, S(-20));
+
+    ui_val_iat      = make_tile(ui_Screen1, "IAT",      S(-TILE_DX), S(TILE_ROW1_DY), TILE_IAT);
+    ui_val_fuel_psi = make_tile(ui_Screen1, "FUEL PSI",  S(TILE_DX), S(TILE_ROW1_DY), TILE_FUEL_PSI);
+    ui_val_afr      = make_tile(ui_Screen1, "AFR",      S(-TILE_DX), S(TILE_ROW2_DY), TILE_AFR);
+    ui_val_boost    = make_tile(ui_Screen1, "BOOST",     S(TILE_DX), S(TILE_ROW2_DY), TILE_BOOST);
 
     lv_timer_create(tile_flash_cb, WARN_FLASH_MS, NULL);
 
-    // ---- Mileage ----
-    make_label(ui_Screen1, "MILEAGE", &lv_font_montserrat_14, C_MUTED, 0, S(169));
-
-    lv_obj_t *odo_row = lv_obj_create(ui_Screen1);
-    lv_obj_set_size(odo_row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_align(odo_row, LV_ALIGN_CENTER, 0, S(201));
-    lv_obj_set_style_bg_opa(odo_row, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(odo_row, 0, 0);
-    lv_obj_set_style_pad_all(odo_row, 0, 0);
-    lv_obj_set_flex_flow(odo_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(odo_row, LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(odo_row, S(6), 0);
-    lv_obj_clear_flag(odo_row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_clear_flag(odo_row, LV_OBJ_FLAG_CLICKABLE);
-
-    ui_label_odometer_value = lv_label_create(odo_row);
-    lv_label_set_text(ui_label_odometer_value, "0.0");
-    lv_obj_set_style_text_font(ui_label_odometer_value, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(ui_label_odometer_value, lv_color_white(), 0);
-
-    lv_obj_t *mi = lv_label_create(odo_row);
-    lv_label_set_text(mi, "mi");
-    lv_obj_set_style_text_font(mi, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(mi, lv_color_hex(C_MUTED), 0);
+    // ---- PRNDM ----
+    build_gear_selector(ui_Screen1);
 }
 
 void ui_Screen1_screen_destroy(void)
@@ -431,108 +403,104 @@ void ui_Screen1_screen_destroy(void)
     if (ui_Screen1) lv_obj_del(ui_Screen1);
 
     ui_Screen1 = NULL;
-    ui_rpm_arc = NULL;
-    ui_fuel_arc = NULL;
-    ui_label_rpm_value = NULL;
-    ui_label_odometer_value = NULL;
-    ui_val_oil_psi = NULL;
-    ui_val_water = NULL;
-    ui_val_oil_temp = NULL;
-    ui_val_trans = NULL;
+    ui_speed_arc = NULL;
+    ui_label_mph_value = NULL;
+    ui_val_iat = NULL;
+    ui_val_fuel_psi = NULL;
+    ui_val_afr = NULL;
+    ui_val_boost = NULL;
 
     for (int i = 0; i < TILE_COUNT; i++) {
-        s_tiles[i].tile = NULL;
+        s_tiles[i].tile  = NULL;
         s_tiles[i].value = NULL;
         s_tiles[i].alarm = false;
-        s_tiles[i].lit = false;
+        s_tiles[i].lit   = false;
     }
+    for (int i = 0; i < GEAR_COUNT; i++) {
+        s_gear_box[i] = NULL;
+        s_gear_lbl[i] = NULL;
+    }
+    s_gear_sel = -1;
 }
 
 // ----------------------------------------------------------------- setters --
 
+void ui_dash_set_speed_mph(float mph)
+{
+    int v = isnan(mph) ? 0 : (int)(mph + 0.5f);
+    if (v < 0) v = 0;
+    if (v > DIAL_MAX_MPH) v = DIAL_MAX_MPH;
+
+    // Only move the arc when the value actually changed. One mph is ~1.3
+    // degrees of sweep here, so every whole mph is worth drawing.
+    if (ui_speed_arc) {
+        static int last_drawn = -1;
+        if (v != last_drawn) {
+            lv_arc_set_value(ui_speed_arc, v);
+            last_drawn = v;
+        }
+    }
+
+    if (ui_label_mph_value) {
+        char buf[8];
+        if (isnan(mph)) snprintf(buf, sizeof(buf), "--");
+        else            snprintf(buf, sizeof(buf), "%d", v);
+        if (strcmp(lv_label_get_text(ui_label_mph_value), buf) != 0)
+            lv_label_set_text(ui_label_mph_value, buf);
+    }
+}
+
 void ui_dash_set_rpm(int rpm)
 {
-    if (!ui_rpm_arc) return;
-
-    if (rpm < 0) rpm = 0;
-    if (rpm > TACH_MAX_RPM) rpm = TACH_MAX_RPM;
-
+    // Not displayed on this gauge; it only gates the AFR warning.
     s_last_rpm = rpm;
+}
 
-    // Green below 5000, amber to the redline, red past it.
-    static uint32_t last = 0;
-    uint32_t want = (rpm >= TACH_REDLINE_RPM) ? C_RED
-                  : (rpm >= 5000)             ? 0xFFA000
-                                              : 0x28FF00;
-    if (want != last) {
-        lv_obj_set_style_arc_color(ui_rpm_arc, lv_color_hex(want), LV_PART_INDICATOR);
-        last = want;
+void ui_dash_set_iat_f(float degf)
+{
+    set_value(ui_val_iat, degf, "%.0f");
+    set_alarm(TILE_IAT, !isnan(degf) && degf > WARN_IAT_MAX);
+}
+
+void ui_dash_set_fuel_psi(float psi)
+{
+    set_value(ui_val_fuel_psi, psi, "%.0f");
+    set_alarm(TILE_FUEL_PSI, !isnan(psi) && psi < WARN_FUEL_PSI_MIN);
+}
+
+void ui_dash_set_afr(float afr)
+{
+    set_value(ui_val_afr, afr, "%.1f");
+    // Lean only matters under load. Cruise and overrun are lean by design, so
+    // gate the warning on the engine actually pulling.
+    set_alarm(TILE_AFR,
+              !isnan(afr) && afr > WARN_AFR_MAX &&
+              s_last_rpm >= WARN_AFR_MIN_RPM);
+}
+
+void ui_dash_set_boost_psi(float psi)
+{
+    set_value(ui_val_boost, psi, "%.1f");
+}
+
+void ui_dash_set_gear(char gear)
+{
+    int sel = -1;
+    for (int i = 0; i < GEAR_COUNT; i++) {
+        if (GEAR_LETTERS[i] == gear) { sel = i; break; }
     }
+    if (sel == s_gear_sel) return;
+    s_gear_sel = sel;
 
-    // 1 degree of sweep is ~29 rpm and ~5.5px of travel, so anything under
-    // ~20 rpm is a sub-pixel change. Redrawing a 632px anti-aliased arc for
-    // that is the single most expensive thing this screen does.
-    static int last_drawn = -1000;
-    if (last_drawn < -999 || abs(rpm - last_drawn) >= 20) {
-        lv_arc_set_value(ui_rpm_arc, rpm);
-        last_drawn = rpm;
-    }
+    for (int i = 0; i < GEAR_COUNT; i++) {
+        if (!s_gear_box[i]) continue;
+        bool on = (i == sel);
 
-    // Big centre number. The 96px face is a large glyph run, so redrawing it
-    // is expensive -- quantise to 50 rpm. Finer than that is unreadable jitter
-    // anyway, and it keeps the readout stable at idle and cruise.
-    if (ui_label_rpm_value) {
-        char buf[8];
-        snprintf(buf, sizeof(buf), "%d", (rpm / 50) * 50);
-        if (strcmp(lv_label_get_text(ui_label_rpm_value), buf) != 0)
-            lv_label_set_text(ui_label_rpm_value, buf);
-    }
-}
-
-void ui_dash_set_fuel_pct(float pct)
-{
-    if (!ui_fuel_arc) return;
-
-    if (isnan(pct)) pct = 0.0f;
-    if (pct < 0.0f)   pct = 0.0f;
-    if (pct > 100.0f) pct = 100.0f;
-    lv_arc_set_value(ui_fuel_arc, (int16_t)pct);
-}
-
-void ui_dash_set_oil_psi(float psi)
-{
-    set_value(ui_val_oil_psi, psi, "%.0f");
-    // Oil pressure reads 0 with the engine off, so only warn once it turns.
-    set_alarm(TILE_OIL_PSI,
-              !isnan(psi) && psi < WARN_OIL_PSI_MIN &&
-              s_last_rpm >= WARN_OIL_PSI_MIN_RPM);
-}
-
-void ui_dash_set_water_f(float degf)
-{
-    set_value(ui_val_water, degf, "%.0f");
-    set_alarm(TILE_WATER, !isnan(degf) && degf > WARN_WATER_MAX);
-}
-
-void ui_dash_set_oil_temp_f(float f)
-{
-    set_value(ui_val_oil_temp, f, "%.0f");
-    set_alarm(TILE_OIL_TEMP, !isnan(f) && f > WARN_OIL_TEMP_MAX);
-}
-
-void ui_dash_set_trans_f(float degf)
-{
-    set_value(ui_val_trans, degf, "%.0f");
-    set_alarm(TILE_TRANS, !isnan(degf) && degf > WARN_TRANS_MAX);
-}
-
-void ui_dash_set_mileage(double miles)
-{
-    if (!ui_label_odometer_value) return;
-
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%.1f", miles);
-    if (strcmp(lv_label_get_text(ui_label_odometer_value), buf) != 0) {
-        lv_label_set_text(ui_label_odometer_value, buf);
+        lv_obj_set_style_text_color(s_gear_lbl[i],
+            on ? lv_color_white() : lv_color_hex(C_MUTED), 0);
+        lv_obj_set_style_border_color(s_gear_box[i],
+            on ? lv_color_white() : lv_color_hex(C_TILE_LINE), 0);
+        lv_obj_set_style_bg_color(s_gear_box[i],
+            on ? lv_color_hex(C_GEAR_ON_BG) : lv_color_hex(C_TILE_BG), 0);
     }
 }

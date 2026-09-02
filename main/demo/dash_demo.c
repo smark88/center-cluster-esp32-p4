@@ -4,11 +4,14 @@
 
 #include <math.h>
 #include "esp_timer.h"
-#include "ui.h"          // TACH_MAX_RPM
+#include "ui.h"          // WARN_* thresholds
 
 #define DEMO_SWEEP_SEC 8.0f     // seconds for one idle -> redline -> idle pull
 #define DEMO_FUEL_SEC  45.0f    // seconds to drain the tank from full to empty
 #define DEMO_IDLE_RPM  800.0f
+// The simulated engine's own ceiling. Deliberately not tied to the dial scale
+// -- this gauge reads mph, and the demo still has to produce plausible rpm.
+#define DEMO_MAX_RPM   7000.0f
 #define DEMO_WARN_SEC  8.0f     // seconds per warning phase
 
 static int64_t s_t0_us = 0;
@@ -28,7 +31,7 @@ void dash_demo_sample(dash_demo_t *out)
     float phase = fmodf(t, DEMO_SWEEP_SEC) / DEMO_SWEEP_SEC;          // 0..1
     float ramp  = (phase < 0.5f) ? (phase * 2.0f)                     // pulling
                                  : (1.0f - (phase - 0.5f) * 2.0f);    // backing off
-    out->rpm = DEMO_IDLE_RPM + ramp * (TACH_MAX_RPM - DEMO_IDLE_RPM);
+    out->rpm = DEMO_IDLE_RPM + ramp * (DEMO_MAX_RPM - DEMO_IDLE_RPM);
 
     // Speed tracks RPM as if we were held in one long gear.
     out->speed_mph = out->rpm / 50.0f;
@@ -37,7 +40,7 @@ void dash_demo_sample(dash_demo_t *out)
     out->fuel_pct = 100.0f - (fmodf(t, DEMO_FUEL_SEC) / DEMO_FUEL_SEC) * 100.0f;
 
     // Oil pressure rises with RPM.
-    out->oil_psi = 15.0f + (out->rpm / TACH_MAX_RPM) * 60.0f;
+    out->oil_psi = 15.0f + (out->rpm / DEMO_MAX_RPM) * 60.0f;
 
     // Temps warm from cold, then hold with a slow ripple.
     float warm   = 1.0f - expf(-t / 20.0f);
@@ -46,15 +49,34 @@ void dash_demo_sample(dash_demo_t *out)
     out->oil_temp_f = 100.0f + warm * 115.0f + wobble;
     out->trans_f    = 100.0f + warm * 80.0f  + wobble;
 
+    // Gauge two channels.
+    out->iat_f     = 90.0f + warm * 50.0f + wobble;          // 90 -> ~140F
+    out->fuel_psi  = 55.0f - (out->rpm / DEMO_MAX_RPM) * 8.0f;
+    out->afr       = 14.7f - (out->rpm / DEMO_MAX_RPM) * 3.5f;  // richens on boost
+    out->boost_psi = -8.0f + (out->rpm / DEMO_MAX_RPM) * 26.0f;
+
+    // Walk the selector so the PRNDM row can be seen switching.
+    {
+        static const char sel[] = "PRNDM";
+        out->gear = sel[((int)(t / 3.0f)) % 5];
+    }
+
 #if DEMO_EXERCISE_WARNINGS
     // Drive one channel past its limit at a time, then a quiet phase, so each
     // tile can be seen flashing on its own. Offsets are taken from the real
     // thresholds, so retuning a threshold keeps the demo honest.
-    switch (((int)(t / DEMO_WARN_SEC)) % 5) {
-        case 1: out->oil_psi    = WARN_OIL_PSI_MIN  -  7.0f; break;
-        case 2: out->oil_temp_f = WARN_OIL_TEMP_MAX + 15.0f; break;
-        case 3: out->water_f    = WARN_WATER_MAX    + 10.0f; break;
-        case 4: out->trans_f    = WARN_TRANS_MAX    + 15.0f; break;
+    switch (((int)(t / DEMO_WARN_SEC)) % 4) {
+        case 1:
+            out->iat_f = WARN_IAT_MAX + 20.0f;
+            break;
+        case 2:
+            out->fuel_psi = WARN_FUEL_PSI_MIN - 12.0f;
+            break;
+        case 3:
+            // AFR only alarms under load, so force the rpm gate open too.
+            out->afr = WARN_AFR_MAX + 1.5f;
+            out->rpm = (float)(WARN_AFR_MIN_RPM + 800);
+            break;
         default: break;   // phase 0: everything in range
     }
 #endif
