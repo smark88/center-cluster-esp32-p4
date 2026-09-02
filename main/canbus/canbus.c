@@ -220,6 +220,11 @@ void canbus_init(void)
     twai_general_config_t g_config =
         TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX, CAN_RX, TWAI_MODE_NORMAL);
 
+    // A GM Global A bus runs on the order of 1800 frames/sec. The default
+    // depth of 5 fills in under 3ms, which is well inside the window where
+    // LVGL can hold a core mid-render, so frames would be dropped silently.
+    g_config.rx_queue_len = 64;
+
     twai_timing_config_t t_config = get_timing(bitrate);
 
     twai_filter_config_t f_config =
