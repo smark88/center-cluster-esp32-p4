@@ -44,12 +44,19 @@
 #define TILE_DX           107   // right edge lands at 207, clear of the numbers
 #define TILE_ROW1_DY      21
 #define TILE_ROW2_DY      111
-#define TILE_BORDER_W     2
-// Extra thickness while a tile is alarming. Drawn as an outline rather than a
-// fatter border: LVGL puts borders inside the object bounds, so growing the
-// border would shrink the content area and make the caption and value jump on
-// every flash. An outline sits outside and costs no reflow.
-#define TILE_WARN_RING_W  4
+// A flashing tile thickens both ways: the border grows inward and a ring is
+// drawn outward, giving one continuous band of about
+// TILE_WARN_BORDER_W + TILE_WARN_RING_W pixels.
+//
+// LVGL draws borders inside the object bounds, so a fatter border would
+// normally shrink the content area and make the caption and value jump on
+// every flash. Padding is set to the complement of the border width, keeping
+// the content inset fixed at TILE_WARN_BORDER_W in both states, so nothing
+// reflows.
+#define TILE_BORDER_W       2   // resting, inward
+#define TILE_WARN_BORDER_W  4   // alarming, inward
+#define TILE_WARN_RING_W    4   // alarming, outward (outline, no reflow)
+#define TILE_PAD_REST       (TILE_WARN_BORDER_W - TILE_BORDER_W)
 
 // ------------------------------------------------------------------ colors --
 
@@ -139,7 +146,7 @@ static lv_obj_t *make_tile(lv_obj_t *parent, const char *caption,
     lv_obj_set_style_outline_pad(tile, 0, 0);
     lv_obj_set_style_outline_color(tile, lv_color_hex(C_RED), 0);
     lv_obj_set_style_outline_opa(tile, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(tile, 0, 0);
+    lv_obj_set_style_pad_all(tile, S(TILE_PAD_REST), 0);
     lv_obj_clear_flag(tile, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(tile, LV_OBJ_FLAG_CLICKABLE);
 
@@ -185,6 +192,12 @@ static void tile_flash_cb(lv_timer_t *t)
             want_red ? lv_color_hex(C_RED) : lv_color_hex(C_TILE_LINE), 0);
         lv_obj_set_style_outline_opa(tl->tile,
             want_red ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        // Grow inward too. Padding takes up the slack so the caption and
+        // value stay put.
+        lv_obj_set_style_border_width(tl->tile,
+            S(want_red ? TILE_WARN_BORDER_W : TILE_BORDER_W), 0);
+        lv_obj_set_style_pad_all(tl->tile,
+            S(want_red ? 0 : TILE_PAD_REST), 0);
         tl->lit = want_red;
     }
 }
@@ -202,6 +215,8 @@ static void set_alarm(int slot, bool on)
         lv_obj_set_style_border_color(s_tiles[slot].tile,
                                       lv_color_hex(C_TILE_LINE), 0);
         lv_obj_set_style_outline_opa(s_tiles[slot].tile, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(s_tiles[slot].tile, S(TILE_BORDER_W), 0);
+        lv_obj_set_style_pad_all(s_tiles[slot].tile, S(TILE_PAD_REST), 0);
         s_tiles[slot].lit = false;
     }
 }
