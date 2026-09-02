@@ -25,7 +25,7 @@ extern lv_anim_t * test_Animation( lv_obj_t *TargetObject, int delay);
 extern lv_obj_t *ui____initial_actions0;
 
 // IMAGES AND IMAGE SETS
-LV_IMG_DECLARE( corvette_c5r_63_720);        // boot splash
+LV_IMG_DECLARE( corvette_c5r_yellow_flipped_720);        // boot splash
 
 // FONTS
 // The dash uses the built-in Montserrat faces (enabled via sdkconfig) so the

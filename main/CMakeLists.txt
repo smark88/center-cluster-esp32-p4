@@ -61,7 +61,7 @@ idf_component_register(
         "main.c"
         "tach_ui/ui.c"
         "tach_ui/screens/ui_Screen1.c"
-        "tach_ui/images/corvette_c5r_63_720.c"
+        "tach_ui/images/corvette_c5r_yellow_flipped_720.c"
         "tach_ui/fonts/ui_font_rpm_96.c"
         "tach_ui/boot/boot_screen.c"
         "odometer/odometer.c"
