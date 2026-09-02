@@ -47,8 +47,11 @@
 #define TILE_W            200
 #define TILE_H            78
 #define TILE_DX           107
+// 90px row pitch, matching gauge one, which leaves a 12px gap between the
+// rows. The mockup's 28/104 was authored for 66px tall tiles; at the current
+// 78px the two rows overlapped by 2px.
 #define TILE_ROW1_DY      28
-#define TILE_ROW2_DY      104
+#define TILE_ROW2_DY      118
 
 // A flashing tile thickens both ways: the border grows inward and a ring is
 // drawn outward, giving one continuous band. Padding is set to the complement
