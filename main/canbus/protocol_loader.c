@@ -39,6 +39,11 @@ static float* signal_name_to_ptr(const char *name){
     if (!strcmp(name,"battery_voltage")) return &can_data.battery_voltage;
     if (!strcmp(name,"oil_pressure")) return &can_data.oil_pressure;
     
+    // Dash tiles. A GM (or any other) protocol json can bind straight to these.
+    if (!strcmp(name,"oil_temp")) return &can_data.oil_temp;
+    if (!strcmp(name,"trans_temp")) return &can_data.trans_temp;
+    if (!strcmp(name,"fuel_level")) return &can_data.fuel_level;
+
     //Haltech specific naming for air/fuel and boost.  Check your protocol for addition/different mapping
     if (!strcmp(name,"wb1")) return &can_data.air_fuel_ratio;
     if (!strcmp(name,"map")) return &can_data.boost;

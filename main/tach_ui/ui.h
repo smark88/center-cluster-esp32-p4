@@ -25,13 +25,11 @@ extern lv_anim_t * test_Animation( lv_obj_t *TargetObject, int delay);
 extern lv_obj_t *ui____initial_actions0;
 
 // IMAGES AND IMAGE SETS
-LV_IMG_DECLARE( ui_img_1656279599); 
-LV_IMG_DECLARE( ui_img_sti_logo_png); 
+LV_IMG_DECLARE( ui_img_c5r);        // boot splash
 
 // FONTS
-LV_FONT_DECLARE( ui_font_DotoLarge);
-LV_FONT_DECLARE( ui_font_Doto_48);
-LV_FONT_DECLARE( school_bell_48);
+// The dash uses the built-in Montserrat faces (enabled via sdkconfig) so the
+// type matches the flat, modern look of the gauge design.
 
 // UI INIT
 void ui_init(void);

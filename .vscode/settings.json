@@ -1,8 +1,12 @@
 {
-    "idf.flashType": "UART",
-    "idf.port": "/dev/tty.usbmodem21101",
-    "idf.currentSetup": "/Users/tway/esp/esp-idf",
-    "idf.customExtraVars": {
-        "IDF_TARGET": "esp32p4"
-    }
+  "idf.flashType": "UART",
+  "idf.currentSetup": "/Users/smark/.espressif/v5.4.4/esp-idf",
+  "idf.gitPath": "/usr/local/bin/git",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32p4",
+    "IDF_PATH": "/Users/smark/.espressif/v5.4.4/esp-idf",
+    "IDF_TOOLS_PATH": "/Users/smark/.espressif/tools",
+    "IDF_PYTHON_ENV_PATH": "/Users/smark/.espressif/tools/python/v5.4.4/venv"
+  },
+  "idf.port": "/dev/tty.usbmodem5C371864701"
 }

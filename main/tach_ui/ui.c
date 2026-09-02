@@ -26,6 +26,14 @@ lv_obj_t *ui____initial_actions0;
 
 ///////////////////// SCREENS ////////////////////
 
+// Once the boot screen has finished loading, hold the logo, fade it out
+// smoothly, then cross-fade to the main UI.
+static void boot_starter(lv_event_t * e)
+{
+    LV_UNUSED(e);
+    boot_dismiss(ui_Screen1);
+}
+
 void ui_init( void )
 {
 lv_disp_t *dispp = lv_disp_get_default();
@@ -33,24 +41,12 @@ lv_theme_t *theme = lv_theme_default_init(dispp, lv_palette_main(LV_PALETTE_BLUE
 lv_disp_set_theme(dispp, theme);
 ui_Screen1_screen_init();
 ui____initial_actions0 = lv_obj_create(NULL);
-lv_disp_load_scr( ui_Screen1);
+
+boot_screen_create();
+lv_obj_add_event_cb(boot_screen, boot_starter, LV_EVENT_SCREEN_LOADED, NULL);
+boot_start();
 }
 
 void ui_destroy( void )
 {ui_Screen1_screen_destroy();
 }
-
-// void boot_starter(){
-//     lv_scr_load_anim(ui_Screen1, LV_SCR_LOAD_ANIM_FADE_ON, 500, 3000, false);
-// }
-// void ui_init( void ){
-//     lv_disp_t *dispp = lv_disp_get_default();
-//     lv_theme_t *theme = lv_theme_default_init(dispp, lv_palette_main(LV_PALETTE_BLUE), lv_palette_main(LV_PALETTE_RED), true, LV_FONT_DEFAULT);
-//     lv_disp_set_theme(dispp, theme);
-//     ui_Screen1_screen_init();
-//     ui____initial_actions0 = lv_obj_create(NULL);
-
-//     boot_screen_create();
-//     lv_obj_add_event_cb(boot_screen, boot_starter, LV_EVENT_SCREEN_LOADED, NULL);
-//     boot_start();
-// }

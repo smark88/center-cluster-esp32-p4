@@ -21,9 +21,7 @@
 #include "driver/adc.h"
 #include "driver/pulse_cnt.h"
 #include "esp_timer.h"
-#include "gps_wrapper.h"
 #include "odometer/odometer.h"
-#include "lap_timer.h"
 #include "canbus.h"
 
 
@@ -37,11 +35,6 @@
 #define SENSOR_SOURCE SENSOR_SOURCE_ANALOG
 // =======================================================
 //-----Pin Assignment---------//
-
-//GPS RX - GPIO 35
-#define GPS_RX_PIN        35
-#define GPS_UART_NUM      UART_NUM_3
-#define GPS_TX_PIN        UART_PIN_NO_CHANGE  
 
 //UART0 Transaction - GPIO 37
 #define UART_TX_PIN 37
@@ -87,14 +80,12 @@
 #define FILTER_SAMPLES_DEFAULT 8
 
 
-//------------GPS-----------//         
-#define GPS_BAUD_RATE     115200
-#define GPS_BUF_SIZE          1024
-#define GPS_MIN_VALID_MPH 3.0f
+//------------SPEED----------//
+// Speed now comes from CAN only (can_data.speed, KPH -> MPH). Values below this
+// are treated as stopped so the dash doesn't flicker at a standstill.
+#define SPEED_MIN_VALID_MPH 3.0f
 
-static char gps_speed_str[8];
 static volatile float g_speed_mph = 0.0f;
-static lv_obj_t *speed_label;
 //--------------------------//
 
 //--------UPDATE/REFRESH_DELAYS------//
@@ -241,7 +232,6 @@ static const char *TAG_TEMP = "TEMP_SENSOR";
 static const char *TAG_PRESSURE = "PRESSURE_SENSOR";
 static const char *TAG_TACH = "TACH_SENSOR";
 static const char *TAG_FUEL = "FUEL_SENSOR";
-static const char *TAG_GPS = "GPS_SENSOR";
 static const char *TAG_AFR = "AFR_SENSOR";
 //--------------------------------//
 
@@ -249,6 +239,7 @@ static const char *TAG_AFR = "AFR_SENSOR";
 typedef struct {
     float oil_temp_f;
     float water_temp_f;
+    float trans_temp_f;      // NAN until a CAN protocol supplies "trans_temp"
     float oil_pressure_psi;
     float fuel_pressure_psi;
     float fuel_level_pct;
@@ -548,103 +539,27 @@ static int detect_gear(float rpm, float mph, float dt)
     return current_gear;
 }
 
-void tach_set_rpm(int rpm){
-    if(rpm < 0) rpm = 0;
-    if(rpm > 9000) rpm = 9000;
-
-    static lv_color_t current_color = {0};
-
-    lv_color_t new_color;
-
-    if (rpm >= 7000)
-        new_color = red_color;
-    else if (rpm >= 5000)
-        new_color = orange_color;
-    else
-        new_color = green_color;
-
-    // Only change color if needed
-    if (new_color.full != current_color.full) {
-        lv_obj_set_style_arc_color(ui_rpm_arc,
-                                   new_color,
-                                   LV_PART_INDICATOR);
-        current_color = new_color;
-    }
-
-    lv_arc_set_value(ui_rpm_arc, rpm);
-}
-
-
 void gauge_timer(lv_timer_t * t) {
 
+    // Smooth the needle so it sweeps instead of snapping.
     static float displayRPM = 0.0f;
     displayRPM += 0.20f * (rpmNow - displayRPM);
+    ui_dash_set_rpm((int)displayRPM);
 
-    tach_set_rpm(displayRPM);
+    float speed_mph = g_speed_mph;
+    if (speed_mph < SPEED_MIN_VALID_MPH)
+        speed_mph = 0.0f;
+    ui_dash_set_speed_mph(speed_mph);
 
-    double miles = odometer_get_miles();
-    char odo_buf[16];
-    snprintf(odo_buf, sizeof(odo_buf), "%06.1f", miles);
-    update_label_if_needed(ui_label_odometer_value, odo_buf, green_color);
+    ui_dash_set_mileage(odometer_get_miles());
 
+    // The four tiles. Any value left at NAN renders as "--".
+    ui_dash_set_oil_psi(g_gauge_data.oil_pressure_psi);
+    ui_dash_set_water_f(g_gauge_data.water_temp_f);
+    ui_dash_set_oil_temp_f(g_gauge_data.oil_temp_f);
+    ui_dash_set_trans_f(g_gauge_data.trans_temp_f);
 
-    // -------- GEAR DETECTION -------- //
-    static int64_t last_us = 0;
-    int64_t now_us = esp_timer_get_time();
-    float dt = (last_us == 0) ? 0.01f :
-               (now_us - last_us) / 1000000.0f;
-    last_us = now_us;
-
-    float speed_for_gear = g_speed_mph;
-
-    if (speed_for_gear < GPS_MIN_VALID_MPH)
-        speed_for_gear = 0.0f;
-
-    int gear = detect_gear(rpmNow, speed_for_gear, dt);
-
-    static int last_displayed = -1;
-
-    if (gear != last_displayed) {
-
-        if(gear == -1) {
-            update_label_if_needed(ui_label_gear_value, "N", purple_color);
-        } else {
-            char buf[2];
-            snprintf(buf, sizeof(buf), "%d", gear);
-            update_label_if_needed(ui_label_gear_value, buf, purple_color);
-        }
-
-        last_displayed = gear;
-    }
-
-    if (SENSOR_SOURCE == SENSOR_SOURCE_CAN){
-        float speed_mph = g_speed_mph;
-
-        if (speed_mph < GPS_MIN_VALID_MPH)
-            speed_mph = 0.0f;
-
-        int speed = (int)speed_mph;
-        static char buf[8];
-        snprintf(buf, sizeof(buf), "%d", speed);
-        lv_label_set_text(ui_label_mph_value, buf);
-
-        char afr_buf[12];
-        snprintf(afr_buf, sizeof(afr_buf), "%4.1f", g_gauge_data.afr);
-
-        char boost_buf[12];
-        snprintf(boost_buf, sizeof(boost_buf), "%4.1f", g_gauge_data.boost_psi);
-
-
-        char fuel_comp_buf[12];
-        snprintf(fuel_comp_buf, sizeof(fuel_comp_buf), "%4.1f", g_gauge_data.fuel_comp);
-        //***Update afr and boost and fuel_comp labels here, 
-        // example -> update_label_if_needed(ui_label_odometer_value, odo_buf, green_color);
-        // update_label_if_needed();
-        // update_label_if_needed();
-    
-    }
-
-
+    ui_dash_set_fuel_pct(g_gauge_data.fuel_level_pct);
 }
 
 //------------------------------------------------------------------------//
@@ -698,123 +613,12 @@ static uint16_t crc16_ccitt(const uint8_t *data, uint16_t len)
 }
 
 
-//---------------------------------GPS------------------------//
-
-static void speed_update_cb(void *arg){
-    lv_obj_t *label = (lv_obj_t *)arg;
-    static bool last_fix = true;
-    static int last_speed = -1;
-
-    bool has_fix = gps_has_fix();
-
-    if (!has_fix) {
-        if (last_fix) {
-            lv_label_set_text(label, "--");
-            last_fix = false;
-        }
-        return;
-    }
-
-    float speed_mph = g_speed_mph;
-
-    if (speed_mph < GPS_MIN_VALID_MPH)
-        speed_mph = 0.0f;
-
-    int speed = (int)speed_mph;
-
-    if (!last_fix || speed != last_speed) {
-        static char buf[8];
-        snprintf(buf, sizeof(buf), "%d", speed);
-        lv_label_set_text(label, buf);
-
-        last_speed = speed;
-        last_fix = true;
-    }
-}
+//------------------------------ODOMETER SAVE------------------------//
 
 void save_miles_task(void *arg){
     while (1){
         odometer_periodic_save();
         vTaskDelay(pdMS_TO_TICKS(3000));
-    }
-}
-
-void gps_task(void *arg) {
-    uint8_t buf[128];
-    static double last_lat = 0.0;
-    static double last_lon = 0.0;
-    static bool first_fix = true;
-
-    while (true) {
-        int len = uart_read_bytes(GPS_UART_NUM, buf, sizeof(buf), portMAX_DELAY);
-        for (int i = 0; i < len; i++) {
-            gps_encode_char(buf[i]);
-        }
-
-        bool has_fix = gps_has_fix();
-        int  sats_used = gps_sats_used();
-        float hdop     = gps_hdop();
-
-        static int last_speed = -1;
-
-        if (has_fix) {
-            float new_speed = gps_get_speed_mph();
-            g_speed_mph = new_speed;
-
-            int speed_int = (int)new_speed;
-
-            if (speed_int != last_speed) {
-                lv_async_call(speed_update_cb, ui_label_mph_value);
-                last_speed = speed_int;
-            }
-            if (sats_used >= 5 && hdop < 3.5f && gps_location_updated()){
-                double current_lat = gps_get_lat();
-                double current_lon = gps_get_lon();
-                
-                //----- Lap timer(comment out if not needed )------//
-                lap_timer_update(current_lat, current_lon, new_speed, has_fix);
-                //------------------------------------------------//
-
-                if (first_fix) {
-                    last_lat = current_lat;
-                    last_lon = current_lon;
-                    first_fix = false;
-                    continue;
-                }
-
-                double meters = gps_distance_between(last_lat, last_lon, current_lat, current_lon);
-
-                // Filter GPS jitter (very important)
-                if (new_speed > GPS_MIN_VALID_MPH && meters > 0.05 && meters < 100.0) {
-                    static double meter_accumulator = 0.0;
-
-                    meter_accumulator += meters;
-
-                    if (meter_accumulator >= 1.0) {
-                        uint32_t whole = (uint32_t)meter_accumulator;
-                        odometer_add_meters(whole);
-                        meter_accumulator -= whole;
-                    }
-                }
-
-                last_lat = current_lat;
-                last_lon = current_lon;
-            }
-
-
-        } else {
-            g_speed_mph = 0;                
-            lv_async_call(speed_update_cb, ui_label_mph_value);
-        }
-        #if ENABLE_LOGS
-            ESP_LOGI(TAG_GPS,
-                    "GPS Fix: %s | Speed: %.0f MPH | Sats Used: %d | HDOP: %.1f",
-                    has_fix ? "YES" : "NO",
-                    g_speed_mph,
-                    sats_used,
-                    hdop);
-        #endif
-        vTaskDelay(1);
     }
 }
 
@@ -1044,11 +848,9 @@ static void adc_task(void *arg) {
             p->afr           = (uint16_t)(g_gauge_data.afr * 10.0f);
             p->boost         = (int16_t)(g_gauge_data.boost_psi * 10.0f);
             
-            uint64_t lap_us = lap_timer_get_current_us();
-            int32_t  delta_us = lap_timer_get_delta_us();
-
-            p->lap_time_ms  = (uint32_t)(lap_us / 1000);
-            p->lap_delta_ms = (int32_t)(delta_us / 1000);
+            // Lap timing removed; fields kept so the packet layout is unchanged.
+            p->lap_time_ms  = 0;
+            p->lap_delta_ms = 0;
 
             uint16_t crc = crc16_ccitt(&buf[1], GAUGE_PKT_LEN - 3);
             memcpy(&buf[GAUGE_PKT_LEN - 2], &crc, 2);
@@ -1142,6 +944,9 @@ static void can_mapping_task(void *arg){
         // ---------- Gauge data ----------
         g_gauge_data.water_temp_f     = can_data.coolant_temp;
         g_gauge_data.oil_pressure_psi = can_data.oil_pressure;
+        g_gauge_data.oil_temp_f       = can_data.oil_temp;
+        g_gauge_data.trans_temp_f     = can_data.trans_temp;
+        g_gauge_data.fuel_level_pct   = can_data.fuel_level;
         g_gauge_data.afr = can_data.air_fuel_ratio;
         g_gauge_data.boost_psi = can_data.boost;
         g_gauge_data.fuel_comp = can_data.fuel_comp;
@@ -1167,11 +972,9 @@ static void can_mapping_task(void *arg){
             p->afr           = (uint16_t)(g_gauge_data.afr * 10.0f);
             p->boost         = (int16_t)(g_gauge_data.boost_psi * 10.0f);
 
-            uint64_t lap_us = lap_timer_get_current_us();
-            int32_t  delta_us = lap_timer_get_delta_us();
-
-            p->lap_time_ms  = (uint32_t)(lap_us / 1000);
-            p->lap_delta_ms = (int32_t)(delta_us / 1000);
+            // Lap timing removed; fields kept so the packet layout is unchanged.
+            p->lap_time_ms  = 0;
+            p->lap_delta_ms = 0;
 
             uint16_t crc = crc16_ccitt(&buf[1], GAUGE_PKT_LEN - 3);
             memcpy(&buf[GAUGE_PKT_LEN - 2], &crc, 2);
@@ -1200,6 +1003,10 @@ void app_main(void) {
     };
     lv_display_t *disp = bsp_display_start_with_config(&cfg);
 
+    // No transmission-temp source yet -- the tile renders "--" until a CAN
+    // protocol binds a "trans_temp" signal.
+    g_gauge_data.trans_temp_f = NAN;
+
     adc_global_init();
     init_label_styles();
     tach_init();
@@ -1210,7 +1017,6 @@ void app_main(void) {
 
     uart_init(UART_PORT, UART_TX_PIN, UART_PIN_NO_CHANGE, UART_TX_BUF_SIZE, UART_BAUD_RATE); 
     uart_init(UART1_PORT, UART1_TX_PIN, UART_PIN_NO_CHANGE, UART_TX_BUF_SIZE, UART_BAUD_RATE); 
-    uart_init(GPS_UART_NUM, UART_PIN_NO_CHANGE, GPS_RX_PIN, (GPS_BUF_SIZE*2), GPS_BAUD_RATE); 
 
     if (SENSOR_SOURCE == SENSOR_SOURCE_CAN){
         canbus_init();
@@ -1218,7 +1024,6 @@ void app_main(void) {
         xTaskCreatePinnedToCore(can_mapping_task,"can_mapping_task",4096,NULL,10,NULL,1);
     } else {
         xTaskCreatePinnedToCore(tach_task, "tach_task", 4096, NULL, 10, NULL, 0);
-        xTaskCreatePinnedToCore(gps_task, "gps_task", 4096, NULL, 5, NULL, 0);
         xTaskCreatePinnedToCore(adc_task, "adc_uart_task", 4096, NULL, 5, NULL, 0);
     }
 

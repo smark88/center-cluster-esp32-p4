@@ -19,7 +19,10 @@ typedef struct{
     float oil_pressure;
     float air_fuel_ratio;
     float boost;
-    float fuel_comp
+    float fuel_comp;
+    float oil_temp;
+    float trans_temp;
+    float fuel_level;
 } can_dash_data_t;
 
 
