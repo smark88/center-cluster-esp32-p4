@@ -249,6 +249,28 @@ static void polar(lv_coord_t centre, float radius, float deg,
     *out_y = (lv_coord_t)(centre + radius * sinf(rad));
 }
 
+// The OBD PIDs land at 0.5-10Hz while this screen redraws at 30, so a raw
+// value would visibly step. Each reading is eased toward its latest sample at
+// the display rate, with a time constant matched to that channel's poll
+// period -- roughly half the sample interval, which glides between samples
+// without adding perceptible lag.
+//
+// This is presentation only. Smoothing cannot recover a transient that was
+// never sampled, which is why the poll periods are tuned first.
+#define EASE_BOOST     0.25f   // polled 100ms  -> tau ~130ms
+#define EASE_AFR       0.15f   // polled 200ms  -> tau ~220ms
+#define EASE_FUEL_PSI  0.15f   // polled 200ms
+#define EASE_IAT       0.05f   // polled 600ms  -> tau ~670ms
+#define EASE_FUEL_LVL  0.01f   // polled 2s, and noisy from tank slosh
+
+static float ease(float *state, float target, float alpha)
+{
+    if (isnan(target)) { *state = NAN; return NAN; }
+    if (isnan(*state)) { *state = target; return target; }   // first sample
+    *state += alpha * (target - *state);
+    return *state;
+}
+
 static void set_value(lv_obj_t *label, float v, const char *fmt)
 {
     if (!label) return;
@@ -475,18 +497,24 @@ void ui_dash_set_rpm(int rpm)
 
 void ui_dash_set_iat_f(float degf)
 {
-    set_value(ui_val_iat, degf, "%.0f");
-    set_alarm(TILE_IAT, !isnan(degf) && degf > WARN_IAT_MAX);
+    static float st = NAN;
+    float v = ease(&st, degf, EASE_IAT);
+    set_value(ui_val_iat, v, "%.0f");
+    set_alarm(TILE_IAT, !isnan(v) && v > WARN_IAT_MAX);
 }
 
 void ui_dash_set_fuel_psi(float psi)
 {
-    set_value(ui_val_fuel_psi, psi, "%.0f");
-    set_alarm(TILE_FUEL_PSI, !isnan(psi) && psi < WARN_FUEL_PSI_MIN);
+    static float st = NAN;
+    float v = ease(&st, psi, EASE_FUEL_PSI);
+    set_value(ui_val_fuel_psi, v, "%.0f");
+    set_alarm(TILE_FUEL_PSI, !isnan(v) && v < WARN_FUEL_PSI_MIN);
 }
 
 void ui_dash_set_afr(float afr)
 {
+    static float st = NAN;
+    afr = ease(&st, afr, EASE_AFR);
     set_value(ui_val_afr, afr, "%.1f");
     // Lean only matters under load. Cruise and overrun are lean by design, so
     // gate the warning on the engine actually pulling.
@@ -497,7 +525,8 @@ void ui_dash_set_afr(float afr)
 
 void ui_dash_set_boost_psi(float psi)
 {
-    set_value(ui_val_boost, psi, "%.1f");
+    static float st = NAN;
+    set_value(ui_val_boost, ease(&st, psi, EASE_BOOST), "%.1f");
 }
 
 void ui_dash_set_drive_gear(int gear)

@@ -29,9 +29,10 @@ extern "C" {
 // 1 = poll the PIDs below, 0 = never transmit.
 #define OBD_POLL_ENABLE 1
 
-// Milliseconds between requests. One PID is asked per tick, round robin, so
-// the full cycle takes this times the number of PIDs.
-#define OBD_POLL_INTERVAL_MS 50
+// How often the poller wakes. Each PID carries its own period in the table in
+// obd_poll.c, matched to how fast that reading physically moves; at most one
+// request goes out per tick so two never collide on the bus.
+#define OBD_POLL_TICK_MS 20
 
 // Functional request address and the ECU reply range.
 #define OBD_REQ_ID    0x7DF

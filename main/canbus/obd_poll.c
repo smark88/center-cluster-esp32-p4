@@ -7,6 +7,7 @@
 #include "freertos/task.h"
 #include "driver/twai.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "canbus.h"
 
 static const char *TAG = "OBD";
@@ -28,6 +29,7 @@ typedef enum {
 typedef struct {
     uint8_t     pid;
     uint8_t     nbytes;     // data bytes that make up the value, 1 or 2
+    uint16_t    period_ms;  // how often to ask; matched to how fast it moves
     float       scale;
     float       offset;
     obd_dest_t  dest;
@@ -37,25 +39,29 @@ typedef struct {
 
 // Scales fold the unit conversion in, same contract as the protocol jsons:
 // everything downstream is imperial.
+// Periods are matched to how fast each thing physically moves. Boost changes
+// in tens of milliseconds, so asking at a flat 300ms would alias real
+// transients away -- no amount of display smoothing recovers that. Barometric
+// pressure barely changes at all, so it can idle in the background.
 static const obd_pid_t s_pids[] = {
-    // Fuel tank level, A * 100 / 255, already a percentage.
-    { 0x2F, 1, 100.0f/255.0f, 0.0f,      DEST_FIELD, NULL, "fuel level" },
-
-    // Intake air temp, A - 40 degC. To degF: A * 1.8 - 40.
-    { 0x0F, 1, 1.8f,          -40.0f,    DEST_FIELD, NULL, "IAT" },
-
     // Manifold absolute pressure, A kPa. Kept raw for the boost maths.
-    { 0x0B, 1, 1.0f,          0.0f,      DEST_MAP,   NULL, "MAP" },
-
-    // Barometric pressure, A kPa. Also raw.
-    { 0x33, 1, 1.0f,          0.0f,      DEST_BARO,  NULL, "baro" },
-
-    // Fuel rail gauge pressure, ((A*256)+B) * 10 kPa -> psi.
-    { 0x23, 2, 10.0f*KPA_TO_PSI, 0.0f,   DEST_FIELD, NULL, "fuel psi" },
+    { 0x0B, 1,  100, 1.0f,          0.0f,   DEST_MAP,   NULL, "MAP" },
 
     // Commanded equivalence ratio, ((A*256)+B) * 2 / 65535 lambda.
     // Stoichiometric petrol is 14.7:1, so lambda * 14.7 gives AFR.
-    { 0x44, 2, (2.0f/65535.0f)*14.7f, 0.0f, DEST_FIELD, NULL, "AFR" },
+    { 0x44, 2,  200, (2.0f/65535.0f)*14.7f, 0.0f, DEST_FIELD, NULL, "AFR" },
+
+    // Fuel rail gauge pressure, ((A*256)+B) * 10 kPa -> psi.
+    { 0x23, 2,  200, 10.0f*KPA_TO_PSI, 0.0f, DEST_FIELD, NULL, "fuel psi" },
+
+    // Intake air temp, A - 40 degC. To degF: A * 1.8 - 40.
+    { 0x0F, 1,  600, 1.8f,          -40.0f, DEST_FIELD, NULL, "IAT" },
+
+    // Fuel tank level, A * 100 / 255, already a percentage.
+    { 0x2F, 1, 2000, 100.0f/255.0f, 0.0f,   DEST_FIELD, NULL, "fuel level" },
+
+    // Barometric pressure, A kPa. Also raw.
+    { 0x33, 1, 5000, 1.0f,          0.0f,   DEST_BARO,  NULL, "baro" },
 };
 
 #define PID_COUNT (sizeof(s_pids)/sizeof(s_pids[0]))
@@ -64,7 +70,7 @@ static const obd_pid_t s_pids[] = {
 // static initialiser.
 static float *s_targets[PID_COUNT];
 
-static int s_next = 0;
+static int64_t s_due_ms[PID_COUNT];
 
 static void bind_targets(void)
 {
@@ -146,13 +152,21 @@ bool obd_poll_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
 static void obd_poll_task(void *arg)
 {
     bind_targets();
-    ESP_LOGI(TAG, "polling %d PIDs every %d ms (transmitting on 0x%03X)",
-             (int)PID_COUNT, OBD_POLL_INTERVAL_MS, OBD_REQ_ID);
+    ESP_LOGI(TAG, "polling %d PIDs (transmitting on 0x%03X)",
+             (int)PID_COUNT, OBD_REQ_ID);
 
     while (1) {
-        send_request(s_pids[s_next].pid);
-        s_next = (s_next + 1) % PID_COUNT;
-        vTaskDelay(pdMS_TO_TICKS(OBD_POLL_INTERVAL_MS));
+        int64_t now = esp_timer_get_time() / 1000;
+
+        // One request per tick at most, so two PIDs never collide on the bus.
+        for (int i = 0; i < PID_COUNT; i++) {
+            if (now >= s_due_ms[i]) {
+                send_request(s_pids[i].pid);
+                s_due_ms[i] = now + s_pids[i].period_ms;
+                break;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(OBD_POLL_TICK_MS));
     }
 }
 
