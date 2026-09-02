@@ -8,6 +8,7 @@
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>   // abs
 
 // ---------------------------------------------------------------- geometry --
 
@@ -368,13 +369,21 @@ void ui_dash_set_rpm(int rpm)
         last = want;
     }
 
-    lv_arc_set_value(ui_rpm_arc, rpm);
+    // 1 degree of sweep is ~29 rpm and ~5.5px of travel, so anything under
+    // ~20 rpm is a sub-pixel change. Redrawing a 632px anti-aliased arc for
+    // that is the single most expensive thing this screen does.
+    static int last_drawn = -1000;
+    if (last_drawn < -999 || abs(rpm - last_drawn) >= 20) {
+        lv_arc_set_value(ui_rpm_arc, rpm);
+        last_drawn = rpm;
+    }
 
-    // Big centre number. Rounded to 10 rpm so the label isn't rebuilt on
-    // every single tick.
+    // Big centre number. The 96px face is a large glyph run, so redrawing it
+    // is expensive -- quantise to 50 rpm. Finer than that is unreadable jitter
+    // anyway, and it keeps the readout stable at idle and cruise.
     if (ui_label_rpm_value) {
         char buf[8];
-        snprintf(buf, sizeof(buf), "%d", (rpm / 10) * 10);
+        snprintf(buf, sizeof(buf), "%d", (rpm / 50) * 50);
         if (strcmp(lv_label_get_text(ui_label_rpm_value), buf) != 0)
             lv_label_set_text(ui_label_rpm_value, buf);
     }

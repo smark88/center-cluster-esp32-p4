@@ -77,6 +77,10 @@
 #define UART_TX_BUF_SIZE 256
 #define UART_BAUD_RATE 2000000
 
+// Dash refresh rate. 30Hz is well past what the eye resolves on a needle, and
+// at 10ms the arc was being invalidated for sub-pixel movements.
+#define GAUGE_TIMER_MS 33
+
 #define ENABLE_LOGS false
 #define ADC_UPDATE_PERIOD_MS 10
 #define FILTER_SAMPLES_DEFAULT 8
@@ -558,8 +562,10 @@ void gauge_timer(lv_timer_t * t) {
 #endif
 
     // Smooth the needle so it sweeps instead of snapping.
+    // Smoothing constant tracks GAUGE_TIMER_MS so the needle response is the
+    // same as it was at the old 10ms tick.
     static float displayRPM = 0.0f;
-    displayRPM += 0.20f * (rpmNow - displayRPM);
+    displayRPM += 0.55f * (rpmNow - displayRPM);
     ui_dash_set_rpm((int)displayRPM);
 
     // Speed is not displayed on this gauge -- it goes to the second cluster,
@@ -1027,7 +1033,7 @@ void app_main(void) {
     odometer_init();
 
     ui_init();
-    lv_timer_create(gauge_timer, 10, NULL);
+    lv_timer_create(gauge_timer, GAUGE_TIMER_MS, NULL);
 
     uart_init(UART_PORT, UART_TX_PIN, UART_PIN_NO_CHANGE, UART_TX_BUF_SIZE, UART_BAUD_RATE); 
     uart_init(UART1_PORT, UART1_TX_PIN, UART_PIN_NO_CHANGE, UART_TX_BUF_SIZE, UART_BAUD_RATE); 
