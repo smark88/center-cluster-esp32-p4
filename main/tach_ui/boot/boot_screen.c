@@ -19,17 +19,17 @@ void boot_screen_create(void)
     lv_obj_set_style_bg_opa(boot_screen, LV_OPA_COVER, 0);
 
     boot_logo = lv_img_create(boot_screen);
-    lv_img_set_src(boot_logo, &skull_blue);
+    lv_img_set_src(boot_logo, &corvette_c5r_63_720);
     lv_img_set_antialias(boot_logo, true);
 
     /* Scale the logo up so it completely fills the round display (cover fit),
        independent of the panel resolution (720x720 4in, 800x800 3.4in, ...). */
     lv_coord_t disp_w = lv_disp_get_hor_res(NULL);
     lv_coord_t disp_h = lv_disp_get_ver_res(NULL);
-    uint32_t zoom_w = ((uint32_t)disp_w * LV_IMG_ZOOM_NONE) / skull_blue.header.w;
-    uint32_t zoom_h = ((uint32_t)disp_h * LV_IMG_ZOOM_NONE) / skull_blue.header.h;
+    uint32_t zoom_w = ((uint32_t)disp_w * LV_IMG_ZOOM_NONE) / corvette_c5r_63_720.header.w;
+    uint32_t zoom_h = ((uint32_t)disp_h * LV_IMG_ZOOM_NONE) / corvette_c5r_63_720.header.h;
     uint32_t zoom = (zoom_w > zoom_h) ? zoom_w : zoom_h;   /* max ratio => cover */
-    lv_img_set_pivot(boot_logo, skull_blue.header.w / 2, skull_blue.header.h / 2);
+    lv_img_set_pivot(boot_logo, corvette_c5r_63_720.header.w / 2, corvette_c5r_63_720.header.h / 2);
     lv_img_set_zoom(boot_logo, (uint16_t)zoom);
 
     lv_obj_center(boot_logo);
