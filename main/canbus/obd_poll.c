@@ -38,8 +38,9 @@ typedef struct {
 // transients away -- no amount of display smoothing recovers that. Barometric
 // pressure barely changes at all, so it can idle in the background.
 // This gauge shows oil pressure, water, oil temp and trans temp, plus the
-// fuel arc. Only three of those exist as standard mode 01 PIDs; see the note
-// under the table for the two that do not.
+// fuel arc, the centre RPM readout and the odometer. Only five of those exist
+// as standard mode 01 PIDs; see the note under the table for the two that do
+// not.
 static const obd_pid_t s_pids[] = {
     // Engine coolant temp, A - 40 degC. To degF: A * 1.8 - 40.
     { 0x05, 1,  600, 1.8f, -40.0f, DEST_FIELD, NULL, "coolant" },
@@ -52,6 +53,16 @@ static const obd_pid_t s_pids[] = {
     // source the fuel arc has in CAN mode: adc_task does not run there, so
     // without this the arc sits empty.
     { 0x2F, 1, 2000, 100.0f/255.0f, 0.0f, DEST_FIELD, NULL, "fuel level" },
+
+    // Engine RPM, ((A*256)+B)/4. Drives the centre readout and the outer arc,
+    // which is the fastest-moving thing on the gauge, so it gets the shortest
+    // period in the table.
+    { 0x0C, 2,  100, 0.25f, 0.0f, DEST_FIELD, NULL, "rpm" },
+
+    // Vehicle speed, A km/h. Folded to mph here like every protocol json does,
+    // because everything downstream is imperial. The odometer integrates this
+    // against elapsed time, so it needs to arrive steadily rather than fast.
+    { 0x0D, 1,  250, 0.621371f, 0.0f, DEST_FIELD, NULL, "speed" },
 };
 
 // NOT AVAILABLE as standard mode 01, and so not polled here:
@@ -75,6 +86,8 @@ static void bind_targets(void)
             case 0x05: s_targets[i] = (float *)&can_data.coolant_temp;   break;
             case 0x5C: s_targets[i] = (float *)&can_data.oil_temp;       break;
             case 0x2F: s_targets[i] = (float *)&can_data.fuel_level;     break;
+            case 0x0C: s_targets[i] = (float *)&can_data.rpm;            break;
+            case 0x0D: s_targets[i] = (float *)&can_data.speed;          break;
             default:   s_targets[i] = NULL;                              break;
         }
     }
@@ -103,6 +116,15 @@ bool obd_poll_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
 {
     if (id < OBD_RESP_LO || id > OBD_RESP_HI)
         return false;
+
+    // Requests go out on 0x7DF, the functional address, so every OBD-capable
+    // module on the bus answers -- and more than one will claim the same PID.
+    // On an FR-S a second module reports coolant as 0, which the A*1.8-40
+    // scaling turns into a clean -40 degF, so the tile flips between the real
+    // reading and -40 depending on which reply landed last. Only the primary
+    // powertrain ECU is authoritative, so ignore the rest.
+    if (id != OBD_ECU_ID)
+        return true;                  // ours, just not the module we trust
     if (dlc < 3)
         return true;                  // ours, but malformed
 

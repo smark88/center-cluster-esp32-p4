@@ -39,6 +39,11 @@ extern "C" {
 #define OBD_RESP_LO   0x7E8
 #define OBD_RESP_HI   0x7EF
 
+// The primary powertrain ECU. Requests are functional (0x7DF) so every module
+// replies, but only this one's answers are used -- see the note in
+// obd_poll_handle_frame.
+#define OBD_ECU_ID    0x7E8
+
 // Starts the polling task. Call after canbus_init().
 void obd_poll_start(void);
 
