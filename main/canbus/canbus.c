@@ -1,6 +1,7 @@
 #include "canbus.h"
 #include "protocol_loader.h"
 #include "obd_poll.h"
+#include "can_bridge.h"
 
 #include "driver/twai.h"
 #include "freertos/FreeRTOS.h"
@@ -48,6 +49,12 @@ volatile can_dash_data_t can_data = {0};
 // =======================================================
 
 void process_can_frame(uint32_t id, uint8_t *data){
+    // Gauge-to-gauge broadcast, if the other gauge is publishing it. Checked
+    // first because it writes can_data wholesale and takes part in nothing
+    // else -- no protocol detection, no frame_lookup entry.
+    if(can_bridge_handle_frame(id, data, 8))
+        return;
+
     // OBD replies are request/response, not broadcast, so they never take part
     // in protocol detection and have no entry in frame_lookup.
     if(obd_poll_handle_frame(id, data, 8))

@@ -27,6 +27,7 @@
 #include "can_scan.h"
 #include "can_selftest.h"
 #include "can_probe.h"
+#include "can_bridge.h"
 #include "obd_poll.h"
 
 
@@ -995,6 +996,10 @@ static void can_mapping_task(void *arg){
         g_gauge_data.boost_psi = can_data.boost;
         g_gauge_data.fuel_comp = can_data.fuel_comp;
         
+
+        // ---------- Gauge-to-gauge broadcast ----------
+        // No-op unless this gauge is the publisher; it rate-limits itself.
+        can_bridge_publish();
 
         // ---------- UART TX ----------
         if (now_ms - last_tx_ms >= 20){
