@@ -28,6 +28,12 @@ extern "C" {
 // the AFR warning is gated on the engine actually pulling.
 #define WARN_AFR_MIN_RPM    2000
 
+// A stopped engine has no fuel pressure, so the tile would sit flashing any
+// time the key is on and the engine is not running. Gate it on the engine
+// actually turning; cranking is around 200 rpm and idle well above 600, so
+// 400 separates the two without waiting for a clean idle.
+#define WARN_FUEL_PSI_MIN_RPM 400
+
 // Hysteresis: a tile clears only once the reading has recovered past the
 // limit by this much, so a value sitting exactly on the threshold does not
 // strobe on and off.

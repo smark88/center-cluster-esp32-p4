@@ -595,7 +595,8 @@ void gauge_timer(lv_timer_t * t) {
         last_odo_us = now_us;
     }
 
-    // Not shown here -- gauge one has the tacho -- but it gates the AFR alarm.
+    // Not shown here -- gauge one has the tacho -- but it gates the AFR and
+    // fuel pressure alarms.
     ui_dash_set_rpm((int)displayRPM);
 
     // The four tiles. Any value left at NAN renders as "--".

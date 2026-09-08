@@ -503,7 +503,7 @@ void ui_dash_set_speed_mph(float mph)
 
 void ui_dash_set_rpm(int rpm)
 {
-    // Not displayed on this gauge; it only gates the AFR warning.
+    // Not displayed on this gauge; it gates the AFR and fuel pressure warnings.
     s_last_rpm = rpm;
 }
 
@@ -517,7 +517,10 @@ void ui_dash_set_iat_f(float degf)
 void ui_dash_set_fuel_psi(float psi)
 {
     set_value(ui_val_fuel_psi, psi, "%.0f");
-    set_alarm(TILE_FUEL_PSI, !isnan(psi) &&
+    // A stopped engine reads zero psi, which is not a fault -- gate on the
+    // engine actually turning, the same way the AFR warning is gated on load.
+    set_alarm(TILE_FUEL_PSI,
+        !isnan(psi) && s_last_rpm >= WARN_FUEL_PSI_MIN_RPM &&
         (s_tiles[TILE_FUEL_PSI].alarm ? psi < WARN_FUEL_PSI_CLEAR
                                       : psi < WARN_FUEL_PSI_MIN));
 }
