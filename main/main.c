@@ -25,6 +25,8 @@
 #include "canbus.h"
 #include "dash_demo.h"
 #include "can_scan.h"
+#include "can_selftest.h"
+#include "can_probe.h"
 #include "obd_poll.h"
 
 
@@ -35,7 +37,7 @@
 #define SENSOR_SOURCE_ANALOG 0
 #define SENSOR_SOURCE_CAN    1
 
-#define SENSOR_SOURCE SENSOR_SOURCE_ANALOG
+#define SENSOR_SOURCE SENSOR_SOURCE_CAN
 // =======================================================
 //-----Pin Assignment---------//
 
@@ -1048,18 +1050,43 @@ void app_main(void) {
     // protocol binds a "trans_temp" signal.
     g_gauge_data.trans_temp_f = NAN;
 
+#if SENSOR_SOURCE == SENSOR_SOURCE_ANALOG
+    // Both of these claim a pin the CAN transceiver needs: the ADC puts
+    // GPIO21 into analog mode and the tach installs an edge ISR on GPIO5,
+    // which is CAN_TX. Neither has a consumer in CAN mode -- adc_task and
+    // tach_task only start in the analog branch below -- so in CAN mode the
+    // ISR would just fire on every ACK bit the controller drives.
     adc_global_init();
-    init_label_styles();
     tach_init();
+#endif
+    init_label_styles();
     odometer_init();
 
     ui_init();
     lv_timer_create(gauge_timer, GAUGE_TIMER_MS, NULL);
 
+// Gauge-two telemetry link. UART1 TX is GPIO37, which is also the console
+// UART0 TX pin, so turning this on destroys every log line the dash emits.
+// Off while CAN is being brought up; set to 1 to feed gauge two again.
+#define GAUGE_UART_ENABLE 0
+
+#if GAUGE_UART_ENABLE && !CAN_SCAN_MODE && !CAN_SELFTEST_MODE && !CAN_PROBE_MODE
+    // UART1 TX is GPIO37, which is also the console UART0 TX pin, so once this
+    // runs every log line is overwritten by binary gauge packets. The two
+    // diagnostic modes below exist to be read on that console, so leave the
+    // gauge-two link off in them.
     uart_init(UART_PORT, UART_TX_PIN, UART_PIN_NO_CHANGE, UART_TX_BUF_SIZE, UART_BAUD_RATE); 
     uart_init(UART1_PORT, UART1_TX_PIN, UART_PIN_NO_CHANGE, UART_TX_BUF_SIZE, UART_BAUD_RATE); 
+#endif
 
-#if CAN_SCAN_MODE
+#if CAN_PROBE_MODE
+    // OBD link diagnosis only -- nothing else runs. See canbus/can_probe.h.
+    xTaskCreatePinnedToCore(can_probe_task, "can_probe", 4096, NULL, 10, NULL, 0);
+#elif CAN_SELFTEST_MODE
+    // Transceiver loopback check only -- nothing else runs. See
+    // canbus/can_selftest.h.
+    xTaskCreatePinnedToCore(can_selftest_task, "can_selftest", 4096, NULL, 10, NULL, 0);
+#elif CAN_SCAN_MODE
     // Bus sniffing only -- nothing else runs. See canbus/can_scan.h.
     xTaskCreatePinnedToCore(can_scan_task, "can_scan", 4096, NULL, 10, NULL, 0);
 #elif DASH_DEMO_MODE

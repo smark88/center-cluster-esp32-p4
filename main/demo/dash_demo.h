@@ -20,7 +20,7 @@ extern "C" {
 #endif
 
 // 1 = simulated engine, 0 = real sensors / CAN.
-#define DASH_DEMO_MODE 1
+#define DASH_DEMO_MODE 0
 
 // Walk each tile past its warning threshold in turn so the red flashes can be
 // verified on the bench. 0 = plausible values only, nothing ever alarms.

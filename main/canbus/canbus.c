@@ -30,6 +30,12 @@ static const int can_rates[] = {
 #define CAN_TX GPIO_NUM_5
 #define CAN_RX GPIO_NUM_4
 
+// Bus bitrate. detect_can_bitrate() probes 1M first in TWAI_MODE_NORMAL, so on
+// a live 500k bus it misreads every frame and answers with error frames --
+// dominant bits that corrupt what the other nodes are saying. Pin the rate
+// when you know it and the probe never runs. 0 = probe, bench use only.
+#define CAN_BITRATE 500000
+
 // =======================================================
 // GLOBAL DATA
 // =======================================================
@@ -51,6 +57,7 @@ void process_can_frame(uint32_t id, uint8_t *data){
 
     if(!active_protocol)
         return;
+
 
     if(id >= CAN_ID_MAX)
         return;
@@ -215,7 +222,7 @@ void canbus_init(void)
 
     protocol_loader_init();
 
-    int bitrate = detect_can_bitrate();
+    int bitrate = CAN_BITRATE ? CAN_BITRATE : detect_can_bitrate();
 
     twai_general_config_t g_config =
         TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX, CAN_RX, TWAI_MODE_NORMAL);
