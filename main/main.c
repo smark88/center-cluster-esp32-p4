@@ -1027,10 +1027,23 @@ void app_main(void) {
         .flags = {
             .buff_dma = true,
             .buff_spiram = false,
-            .sw_rotate = false,
+            // Needed for the 180 turn below. The JD9365 can mirror in
+            // hardware, which would be free, but the BSP builds the panel
+            // inside bsp_display_start_with_config and never hands the handle
+            // back -- reaching it would mean editing a managed component that
+            // any dependency refresh would overwrite.
+            .sw_rotate = true,
         }
     };
     lv_display_t *disp = bsp_display_start_with_config(&cfg);
+
+    // The gauges are mounted upside down in the cluster, so the panel is
+    // rotated in software rather than reworking every coordinate in the UI.
+    // Only dirty areas are transformed, not the whole 720x720 frame, and LVGL
+    // rotates touch input to match on its own.
+    bsp_display_lock(0);
+    bsp_display_rotate(disp, LV_DISPLAY_ROTATION_180);
+    bsp_display_unlock();
 
     // No transmission-temp source yet -- the tile renders "--" until a CAN
     // protocol binds a "trans_temp" signal.
