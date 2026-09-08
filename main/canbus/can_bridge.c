@@ -7,6 +7,9 @@
 #if CAN_BRIDGE_MODE != CAN_BRIDGE_OFF
 #include "driver/twai.h"
 #include "esp_timer.h"
+#include "esp_log.h"
+
+static const char *TAG = "CAN_BRIDGE";
 #endif
 
 // Sentinel for "the publisher has no reading for this". Kept out of the
@@ -72,9 +75,18 @@ static void put_slot(uint8_t *p, const bridge_slot_t *s)
     p[1] = (uint8_t)((q >> 8) & 0xFF);
 }
 
+// Set if another node is already transmitting on one of our ids. Publishing
+// stops for good at that point -- two nodes sending different payloads under
+// one id do not interleave, they collide mid-frame and produce error frames,
+// and this bus has ABS on it.
+static volatile bool s_collision = false;
+
 void can_bridge_publish(void)
 {
     static int64_t next_ms = 0;
+
+    if (s_collision)
+        return;
 
     int64_t now = esp_timer_get_time() / 1000;
     if (now < next_ms)
@@ -104,7 +116,35 @@ void can_bridge_publish(void) { }
 #endif // PUBLISH
 
 
-#if CAN_BRIDGE_MODE == CAN_BRIDGE_SUBSCRIBE
+#if CAN_BRIDGE_MODE == CAN_BRIDGE_PUBLISH
+
+// The controller does not self-receive in TWAI_MODE_NORMAL, so a frame
+// arriving on one of our ids can only have come from another node -- something
+// on this bus already owns that id. Stop transmitting rather than fight it.
+//
+// This exists because the ids cannot be proven free from a datasheet. They are
+// chosen to be low priority and outside the diagnostic block, which makes a
+// clash unlikely, not impossible. On an unfamiliar car this is the difference
+// between finding out from a log line and finding out from the brake module.
+bool can_bridge_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
+{
+    (void)data; (void)dlc;
+
+    if (id < CAN_BRIDGE_BASE_ID || id >= CAN_BRIDGE_BASE_ID + CAN_BRIDGE_FRAMES)
+        return false;
+
+    if (!s_collision) {
+        s_collision = true;
+        ESP_LOGE(TAG, "id 0x%03X is already in use on this bus -- bridge "
+                      "publishing disabled", (unsigned)id);
+        ESP_LOGE(TAG, "  move CAN_BRIDGE_BASE_ID somewhere clear, then check "
+                      "with CAN_SCAN_MODE that the new range is unused");
+    }
+
+    return true;
+}
+
+#elif CAN_BRIDGE_MODE == CAN_BRIDGE_SUBSCRIBE
 
 bool can_bridge_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
 {
@@ -139,4 +179,4 @@ bool can_bridge_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
     return false;
 }
 
-#endif // SUBSCRIBE
+#endif // handler
