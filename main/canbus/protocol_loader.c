@@ -20,7 +20,10 @@ static void (*decode_table[CAN_ID_MAX])(uint8_t *data);
 // of internal DRAM to hand to a lookup table that is read a few times per CAN
 // frame. PSRAM latency is irrelevant at that rate.
 EXT_RAM_BSS_ATTR can_protocol_t protocols[MAX_PROTOCOLS];
-static int protocol_hits[MAX_PROTOCOLS];
+// One bit per frame index, set when that frame's id has been seen on the bus.
+// Counting distinct frames rather than sightings is the whole point -- see
+// protocol_detect. MAX_FRAMES is 32, so a uint32_t covers every index.
+static uint32_t protocol_seen[MAX_PROTOCOLS];
 
 int protocol_count = 0;
 
@@ -186,6 +189,8 @@ void protocol_loader_init(void){
     protocol_count = 0;
     active_protocol = NULL;
 
+    memset(protocol_seen,0,sizeof(protocol_seen));
+
     memset(frame_lookup,0,sizeof(frame_lookup));
     memset(decode_table,0,sizeof(decode_table));
 
@@ -206,8 +211,40 @@ void protocol_loader_init(void){
     }
 
     ESP_LOGI(TAG,"Loaded %d CAN protocols",protocol_count);
-    
+
+    // Resolve CAN_PROTOCOL_NAME once, here, rather than sniffing for it.
+    if (!strcmp(CAN_PROTOCOL_NAME, "none")) {
+        detection_done = true;          // never adopt anything
+        ESP_LOGI(TAG,"Broadcast decoding disabled; OBD polling only");
+    } else if (CAN_PROTOCOL_NAME[0] != '\0') {
+        for (int p = 0; p < protocol_count; p++){
+            if (!strcmp(protocols[p].name, CAN_PROTOCOL_NAME)){
+                active_protocol = &protocols[p];
+                detection_done  = true;
+                ESP_LOGI(TAG,"Pinned CAN protocol: %s", protocols[p].name);
+                break;
+            }
+        }
+        if (!active_protocol)
+            ESP_LOGW(TAG,"CAN_PROTOCOL_NAME \"%s\" not found, decoding nothing",
+                     CAN_PROTOCOL_NAME);
+        detection_done = true;
+    }
 }
+
+// Lock a protocol in only once TWO DIFFERENT frames from it have been seen.
+//
+// This used to count sightings, not distinct frames, so one id that happened
+// to collide was enough: the id arrives, the counter hits two on its second
+// broadcast, and the whole protocol is adopted. gm.json's 0x4C1 is also
+// broadcast by a Subaru FR-S, and 0x4C1 is the frame carrying coolant_temp --
+// so the GM protocol would lock in on an FR-S and decode Subaru bytes as GM
+// coolant, scaling them through 1.8x-40 and writing -40 over the good OBD
+// reading several times a second.
+//
+// Requiring two distinct ids makes a false lock need two independent
+// collisions in the same protocol, which is a far higher bar.
+#define PROTOCOL_DETECT_MIN_FRAMES 2
 
 void protocol_detect(uint32_t id)
 {
@@ -219,9 +256,9 @@ void protocol_detect(uint32_t id)
 
         for (int f = 0; f < proto->frame_count; f++){
             if (proto->frames[f].id == id){
-                protocol_hits[p]++;
+                protocol_seen[p] |= (1u << f);
 
-                if (protocol_hits[p] >= 2){
+                if (__builtin_popcount(protocol_seen[p]) >= PROTOCOL_DETECT_MIN_FRAMES){
                     active_protocol = proto;
                     detection_done = true;
 

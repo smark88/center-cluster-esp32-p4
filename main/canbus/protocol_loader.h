@@ -48,6 +48,20 @@ typedef struct {
     can_frame_def_t frames[MAX_FRAMES];
 } can_protocol_t;
 
+// Which broadcast protocol to decode.
+//   "none"  decode nothing; the OBD poller is the only source. Correct for any
+//           factory vehicle.
+//   ""      auto-detect from frame ids (the original behaviour).
+//   name    pin one, e.g. "gm_global_a" or "haltech".
+//
+// Auto-detection matches on raw ids, and the aftermarket ECU protocols shipped
+// here use ranges that stock OEM buses also broadcast. A Subaru FR-S hits five
+// of haltech's ids (0x360 0x361 0x370 0x372 0x375) and gm.json's 0x4C1. Once
+// one locks in, it decodes unrelated bytes into can_data and fights the OBD
+// poller for the same fields -- coolant flipping between the real reading and
+// -40 is exactly what that looks like.
+#define CAN_PROTOCOL_NAME "none"
+
 extern can_protocol_t *active_protocol;
 extern can_frame_def_t *frame_lookup[CAN_ID_MAX];
 
