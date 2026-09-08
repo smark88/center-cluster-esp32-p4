@@ -68,6 +68,8 @@ idf_component_register(
         "canbus/canbus.c"
         "canbus/protocol_loader.c"
         "canbus/can_scan.c"
+        "canbus/can_selftest.c"
+        "canbus/can_probe.c"
         "canbus/obd_poll.c"
         "demo/dash_demo.c"
         ${PROTOCOL_LIST_FILE}
