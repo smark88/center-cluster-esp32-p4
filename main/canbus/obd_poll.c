@@ -43,6 +43,10 @@ typedef struct {
 // in tens of milliseconds, so asking at a flat 300ms would alias real
 // transients away -- no amount of display smoothing recovers that. Barometric
 // pressure barely changes at all, so it can idle in the background.
+// This gauge shows boost, AFR, fuel pressure, intake air temp and the fuel
+// arc, plus the centre mph readout, the odometer and the gear estimate. All
+// of them exist as standard mode 01 PIDs, so this table is the whole source
+// in CAN mode.
 static const obd_pid_t s_pids[] = {
     // Manifold absolute pressure, A kPa. Kept raw for the boost maths.
     { 0x0B, 1,  100, 1.0f,          0.0f,   DEST_MAP,   NULL, "MAP" },
@@ -62,6 +66,16 @@ static const obd_pid_t s_pids[] = {
 
     // Barometric pressure, A kPa. Also raw.
     { 0x33, 1, 5000, 1.0f,          0.0f,   DEST_BARO,  NULL, "baro" },
+
+    // Vehicle speed, A km/h, folded to mph here because everything downstream
+    // is imperial. This is the centre readout on this gauge and the odometer
+    // integrates it against elapsed time, so it needs to arrive steadily.
+    { 0x0D, 1,  250, 0.621371f,     0.0f,   DEST_FIELD, NULL, "speed" },
+
+    // Engine RPM, ((A*256)+B)/4. Not displayed on this gauge, but the gear
+    // estimate needs it alongside speed, and it moves fast enough that a slow
+    // period would alias the shift detection away.
+    { 0x0C, 2,  100, 0.25f,         0.0f,   DEST_FIELD, NULL, "rpm" },
 };
 
 #define PID_COUNT (sizeof(s_pids)/sizeof(s_pids[0]))
@@ -80,6 +94,8 @@ static void bind_targets(void)
             case 0x0F: s_targets[i] = (float *)&can_data.air_temp;       break;
             case 0x23: s_targets[i] = (float *)&can_data.fuel_pressure;  break;
             case 0x44: s_targets[i] = (float *)&can_data.air_fuel_ratio; break;
+            case 0x0D: s_targets[i] = (float *)&can_data.speed;          break;
+            case 0x0C: s_targets[i] = (float *)&can_data.rpm;            break;
             default:   s_targets[i] = NULL;                              break;
         }
     }
@@ -108,6 +124,15 @@ bool obd_poll_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
 {
     if (id < OBD_RESP_LO || id > OBD_RESP_HI)
         return false;
+
+    // Requests go out on 0x7DF, the functional address, so every OBD-capable
+    // module on the bus answers -- and more than one will claim the same PID.
+    // On an FR-S a second module reports coolant as 0, which the A*1.8-40
+    // scaling turns into a clean -40 degF, so the tile flips between the real
+    // reading and -40 depending on which reply landed last. Only the primary
+    // powertrain ECU is authoritative, so ignore the rest.
+    if (id != OBD_ECU_ID)
+        return true;                  // ours, just not the module we trust
     if (dlc < 3)
         return true;                  // ours, but malformed
 
