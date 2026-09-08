@@ -27,7 +27,7 @@ extern "C" {
 #endif
 
 // 1 = poll the PIDs below, 0 = never transmit.
-#define OBD_POLL_ENABLE 1
+#define OBD_POLL_ENABLE 0
 
 // How often the poller wakes. Each PID carries its own period in the table in
 // obd_poll.c, matched to how fast that reading physically moves; at most one
