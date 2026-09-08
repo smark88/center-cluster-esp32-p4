@@ -48,7 +48,7 @@ extern "C" {
 
 // Set per gauge. The publisher must poll every PID both gauges need; the
 // subscriber should also set OBD_POLL_ENABLE to 0 so it stays silent.
-#define CAN_BRIDGE_MODE       CAN_BRIDGE_OFF
+#define CAN_BRIDGE_MODE       CAN_BRIDGE_PUBLISH
 
 #define CAN_BRIDGE_BASE_ID    0x7F0
 #define CAN_BRIDGE_FRAMES     3
