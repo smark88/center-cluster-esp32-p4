@@ -89,7 +89,7 @@ lv_obj_t *ui_label_mph_value = NULL;
 lv_obj_t *ui_label_gear_value = NULL;
 lv_obj_t *ui_val_iat = NULL;
 lv_obj_t *ui_val_ethanol = NULL;
-lv_obj_t *ui_val_afr = NULL;
+lv_obj_t *ui_val_knock = NULL;
 lv_obj_t *ui_val_boost = NULL;
 
 // lv_line keeps a pointer to the caller's points, so they must outlive it.
@@ -97,7 +97,7 @@ static lv_point_t s_tick_pts[TICK_COUNT][2];
 
 // ------------------------------------------------------------- tile alarms --
 
-enum { TILE_IAT = 0, TILE_ETHANOL, TILE_AFR, TILE_BOOST, TILE_COUNT };
+enum { TILE_IAT = 0, TILE_ETHANOL, TILE_KNOCK, TILE_BOOST, TILE_COUNT };
 
 typedef struct {
     lv_obj_t *tile;         // for the border and ring
@@ -438,7 +438,7 @@ void ui_Screen1_screen_init(void)
     // ---- Four sensor tiles ----
     ui_val_iat      = make_tile(ui_Screen1, "IAT",      S(-TILE_DX), S(TILE_ROW1_DY), TILE_IAT);
     ui_val_ethanol  = make_tile(ui_Screen1, "ETHANOL",   S(TILE_DX), S(TILE_ROW1_DY), TILE_ETHANOL);
-    ui_val_afr      = make_tile(ui_Screen1, "AFR",      S(-TILE_DX), S(TILE_ROW2_DY), TILE_AFR);
+    ui_val_knock    = make_tile(ui_Screen1, "KNOCK",    S(-TILE_DX), S(TILE_ROW2_DY), TILE_KNOCK);
     ui_val_boost    = make_tile(ui_Screen1, "BOOST",     S(TILE_DX), S(TILE_ROW2_DY), TILE_BOOST);
 
     lv_timer_create(tile_flash_cb, WARN_FLASH_MS, NULL);
@@ -457,7 +457,7 @@ void ui_Screen1_screen_destroy(void)
     ui_label_gear_value = NULL;
     ui_val_iat = NULL;
     ui_val_ethanol = NULL;
-    ui_val_afr = NULL;
+    ui_val_knock = NULL;
     ui_val_boost = NULL;
 
     for (int i = 0; i < TILE_COUNT; i++) {
@@ -522,15 +522,17 @@ void ui_dash_set_ethanol(float pct)
     set_value(ui_val_ethanol, pct, "%.0f");
 }
 
-void ui_dash_set_afr(float afr)
+void ui_dash_set_knock(float deg)
 {
-    set_value(ui_val_afr, afr, "%.1f");
-    // Lean only matters under load. Cruise and overrun are lean by design, so
-    // gate the warning on the engine actually pulling.
-    set_alarm(TILE_AFR,
-              !isnan(afr) && s_last_rpm >= WARN_AFR_MIN_RPM &&
-              (s_tiles[TILE_AFR].alarm ? afr > WARN_AFR_CLEAR
-                                       : afr > WARN_AFR_MAX));
+    set_value(ui_val_knock, deg, "%.1f");
+    // No load gate. Knock retard sits at zero when nothing is wrong, so any
+    // sustained reading is already the signal -- unlike AFR, which runs lean
+    // by design on cruise and overrun and needed the engine to be pulling
+    // before a high number meant anything.
+    set_alarm(TILE_KNOCK,
+              !isnan(deg) &&
+              (s_tiles[TILE_KNOCK].alarm ? deg > WARN_KNOCK_CLEAR
+                                         : deg > WARN_KNOCK_MAX));
 }
 
 void ui_dash_set_boost_psi(float psi)

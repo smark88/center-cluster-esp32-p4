@@ -282,6 +282,7 @@ typedef struct {
     float afr;
     float boost_psi;
     float fuel_comp;
+    float knock_deg;         // degrees of timing pulled
 } gauge_data_t;
 
 static gauge_data_t g_gauge_data;
@@ -664,7 +665,7 @@ void gauge_timer(lv_timer_t * t) {
     // The four tiles. Any value left at NAN renders as "--".
     ui_dash_set_iat_f(g_gauge_data.iat_f);
     ui_dash_set_ethanol(g_gauge_data.fuel_comp);
-    ui_dash_set_afr(g_gauge_data.afr);
+    ui_dash_set_knock(g_gauge_data.knock_deg);
     ui_dash_set_boost_psi(g_gauge_data.boost_psi);
 }
 
@@ -1052,9 +1053,11 @@ static void can_mapping_task(void *arg){
             int sel = (int)can_data.gear_sel;
             ui_dash_set_gear((sel >= 0 && sel < 4) ? prndl[sel] : 0);
 
-            // Engaged gear is computed from RPM against speed, not read off
-            // the bus: can_data.gear_num comes from the 33.3k single-wire bus
-            // this hardware cannot reach, so it was permanently zero.
+            // Engaged gear now comes from the transmission itself over mode
+            // 22, which cannot be wrong about tyre diameter the way the ratio
+            // estimate can. The estimate stays as the fallback for when the
+            // TCM does not answer -- a standalone-controlled box, or a car
+            // where 0x199A is not the right PID.
             // Rate limited to the period RPM actually arrives on. This loop
             // runs every 10ms but rpm refreshes at 100ms over the bridge, so
             // calling every pass would feed detect_gear a 100ms step divided
@@ -1068,13 +1071,17 @@ static void can_mapping_task(void *arg){
                              : (now_ms - gear_last_ms) / 1000.0f;
                 gear_last_ms = now_ms;
 
-                int g = detect_gear(can_data.rpm, can_data.speed, dt);
+                int g = (int)can_data.gear_num;
+                if (g < 1 || g > GEAR_COUNT)
+                    g = detect_gear(can_data.rpm, can_data.speed, dt);
+
                 ui_dash_set_drive_gear((g >= 1 && g <= GEAR_COUNT) ? g : 0);
             }
         }
         g_gauge_data.afr = can_data.air_fuel_ratio;
         g_gauge_data.boost_psi = can_data.boost;
         g_gauge_data.fuel_comp = can_data.fuel_comp;
+        g_gauge_data.knock_deg = can_data.knock_retard;
         
 
         // ---------- Gauge-to-gauge broadcast ----------

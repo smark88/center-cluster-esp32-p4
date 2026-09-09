@@ -21,18 +21,19 @@ extern "C" {
 // A tile flashes red while its reading is outside these limits.
 // ---------------------------------------------------------------------------
 #define WARN_IAT_MAX        170.0f   // flash above this
-#define WARN_AFR_MAX        14.0f    // flash above this, but only under load
+// Knock retard is degrees of timing the ECU has pulled. Zero is normal, so
+// unlike AFR there is no load gate needed -- a non-zero reading already means
+// something is happening. On a supercharged motor a couple of degrees on a hot
+// day is ordinary; sustained single digits is not.
+#define WARN_KNOCK_MAX       3.0f    // flash above this
 
-// Lean only matters under load -- cruise and overrun run lean by design, so
-// the AFR warning is gated on the engine actually pulling.
-#define WARN_AFR_MIN_RPM    2000
 
 
 // Hysteresis: a tile clears only once the reading has recovered past the
 // limit by this much, so a value sitting exactly on the threshold does not
 // strobe on and off.
 #define WARN_IAT_CLEAR      165.0f
-#define WARN_AFR_CLEAR       13.7f
+#define WARN_KNOCK_CLEAR     1.5f
 
 // Once tripped, a tile stays lit at least this long. A fuel pressure dip can
 // be over in 100ms, which is far too brief to notice otherwise.
@@ -53,7 +54,7 @@ extern lv_obj_t *ui_label_mph_value;
 extern lv_obj_t *ui_label_gear_value;
 extern lv_obj_t *ui_val_iat;
 extern lv_obj_t *ui_val_ethanol;
-extern lv_obj_t *ui_val_afr;
+extern lv_obj_t *ui_val_knock;
 extern lv_obj_t *ui_val_boost;
 
 // Convenience setters. Pass NAN for "no data" and the tile shows "--".
@@ -66,7 +67,7 @@ void ui_dash_set_rpm(int rpm);
 
 void ui_dash_set_iat_f(float degf);
 void ui_dash_set_ethanol(float pct);
-void ui_dash_set_afr(float afr);
+void ui_dash_set_knock(float deg);
 void ui_dash_set_boost_psi(float psi);
 
 // PRNDM selector row along the bottom.
