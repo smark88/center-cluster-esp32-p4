@@ -109,31 +109,27 @@ static const obd_pid_t s_pids[] = {
     // is there; it is just behind manufacturer-proprietary PIDs that have to
     // be asked for by physical address rather than functionally.
     //
-    // PID and formula from eigger/espcomponents ble_elm327 presets.py, which
-    // carries 49 GM mode 22 definitions with per-PID maths -- the first source
-    // found that publishes formulas rather than just PID numbers. Its
-    // gm_trans_temp agrees with every other source, which is some evidence the
-    // rest is not invented.
+    // Oil pressure has three candidate encodings from three sources, and
+    // they do not agree. Only the car settles it -- put the tile next to HP
+    // Tuners, which already reads this value, and see which matches.
     //
-    // It lists two oil pressure PIDs and they disagree about which ECU family
-    // they suit:
-    //     gm_oil_pressure      115C   (A * 0.65) - 17.5
-    //     gm_oil_pressure_alt  1470    A * 3.985
-    // 115C is the unsuffixed one, so it goes in first. If it answers 0x7F, try
-    // 1470 with a scale of 3.985 and no offset.
+    //   PID    formula              source                         at A=full
+    //   115C   (A*0.65) - 17.5      espcomponents + OBD-Monitor    148 psi
+    //   1470    A*0.578             RaceCapture, on an LS3 SS Sedan 147 psi
+    //   1470    A*3.985             espcomponents "_alt"          1016 psi
     //
-    // 115C is corroborated independently by dchad/OBD-Monitor, whose notes
-    // record it as a hand-built custom PID because it is not in the extended
-    // set. That source writes the equation as (A * .065) - 17.5, a tenth of
-    // the scale used here, but it cannot be right for a single byte: 255 *
-    // 0.065 - 17.5 is negative, so the gauge could never read above zero. Its
-    // own note mentions a steady 42 psi observed, which needs A = 92 at 0.65
-    // and A = 915 at 0.065 -- out of range for one byte. The decimal point is
-    // in the wrong place there, not here.
+    // 115C and 1470@0.578 are both physically sound -- each spreads a
+    // plausible 0-150 psi across the byte with good resolution. 1470@3.985
+    // uses only the bottom 8% of the range and is almost certainly a wrong
+    // transcription, so ignore it. That leaves a real two-way tie.
     //
-    // A hot LT4 idles near 25 psi and shows 60-70 at 3000 rpm. HP Tuners
-    // already reads this on the car, so put the two side by side -- that is a
-    // direct check of both PID and formula in one go.
+    // 115C is the default here because two independent projects list it. But
+    // the RaceCapture 1470@0.578 figure comes from an LS3 SS Sedan -- a
+    // Global A GM V8, the closest published platform to this LT4 -- so if 115C
+    // answers 0x7F or reads wrong, the first thing to try is:
+    //     { 0x1470, 1, 300, 0.578f, 0.0f, DEST_FIELD, NULL, "oil psi",
+    //       0x22, OBD_ECM_REQ, OBD_ECU_ID },
+    // and bind 0x1470 to oil_pressure in bind_targets below.
     { 0x115C, 1,  300, 0.65f, -17.5f, DEST_FIELD, NULL, "oil psi",
       0x22, OBD_ECM_REQ, OBD_ECU_ID },
 
