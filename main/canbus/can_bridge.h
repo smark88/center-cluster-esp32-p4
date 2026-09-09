@@ -31,6 +31,11 @@
 //   0x7F0  rpm          speed        coolant      oil temp
 //   0x7F1  fuel level   fuel psi     AFR          intake air temp
 //   0x7F2  boost        oil psi      trans temp   fuel comp
+//   0x7F3  gear         PRNDL        knock retard throttle
+//
+// Slots are append-only: fuel psi and AFR are no longer displayed anywhere but
+// keep their places, because renumbering would silently mis-decode on any
+// gauge running older firmware.
 
 #ifndef CAN_BRIDGE_H
 #define CAN_BRIDGE_H
@@ -51,11 +56,11 @@ extern "C" {
 #define CAN_BRIDGE_MODE       CAN_BRIDGE_SUBSCRIBE
 
 #define CAN_BRIDGE_BASE_ID    0x7F0
-#define CAN_BRIDGE_FRAMES     3
+#define CAN_BRIDGE_FRAMES     4
 
 // 20 Hz. The display refreshes at GAUGE_TIMER_MS (33ms) and the fastest thing
 // on it is the RPM arc, so anything quicker is redrawing the same number.
-// Three frames at this rate is 60 frames/sec against a bus that carries well
+// Four frames at this rate is 80 frames/sec against a bus that carries well
 // over a thousand.
 #define CAN_BRIDGE_PERIOD_MS  50
 

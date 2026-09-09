@@ -50,6 +50,11 @@ static void bind_slots(void)
     s_slots[9]  = (bridge_slot_t){ (float *)&d->oil_pressure,   10.0f };
     s_slots[10] = (bridge_slot_t){ (float *)&d->trans_temp,     10.0f };
     s_slots[11] = (bridge_slot_t){ (float *)&d->fuel_comp,      10.0f };
+    // 0x7F3
+    s_slots[12] = (bridge_slot_t){ (float *)&d->gear_num,       1.0f  };
+    s_slots[13] = (bridge_slot_t){ (float *)&d->gear_sel,       1.0f  };
+    s_slots[14] = (bridge_slot_t){ (float *)&d->knock_retard,   10.0f };
+    s_slots[15] = (bridge_slot_t){ (float *)&d->throttle_pct,   10.0f };
 
     s_bound = true;
 }
@@ -60,7 +65,9 @@ static void put_slot(uint8_t *p, const bridge_slot_t *s)
 {
     int32_t q;
 
-    float v = *s->field;
+    // A spare slot has no field behind it; send it as "no reading" so a future
+    // firmware that starts using it cannot mistake padding for a value.
+    float v = s->field ? *s->field : NAN;
     if (isnan(v)) {
         q = BRIDGE_NA;
     } else {
@@ -179,6 +186,8 @@ bool can_bridge_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
         int16_t q = (int16_t)((uint16_t)p[0] | ((uint16_t)p[1] << 8));
 
         bridge_slot_t *s = &s_slots[f * 4 + i];
+        if (!s->field)
+            continue;                // spare
 
         // NAN rather than zero, so a reading the publisher does not have keeps
         // rendering as "--" instead of appearing as a real value of nothing.
@@ -192,8 +201,10 @@ bool can_bridge_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
         dbg_ms = now + 1000;
         ESP_LOGI(TAG, "rx 0x%03X  %.1f %.1f %.1f %.1f",
                  (unsigned)id,
-                 *s_slots[f * 4 + 0].field, *s_slots[f * 4 + 1].field,
-                 *s_slots[f * 4 + 2].field, *s_slots[f * 4 + 3].field);
+                 s_slots[f*4+0].field ? *s_slots[f*4+0].field : NAN,
+                 s_slots[f*4+1].field ? *s_slots[f*4+1].field : NAN,
+                 s_slots[f*4+2].field ? *s_slots[f*4+2].field : NAN,
+                 s_slots[f*4+3].field ? *s_slots[f*4+3].field : NAN);
     }
 #endif
 

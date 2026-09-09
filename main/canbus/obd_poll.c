@@ -76,6 +76,61 @@ static const obd_pid_t s_pids[] = {
     // estimate needs it alongside speed, and it moves fast enough that a slow
     // period would alias the shift detection away.
     { 0x0C, 2,  100, 0.25f,         0.0f,   DEST_FIELD, NULL, "rpm" },
+
+    // Throttle position, A * 100 / 255 percent. Not on any tile -- carried
+    // because knock and gear both only mean something under throttle, and
+    // having it costs one slot that was spare anyway.
+    { 0x11, 1,  200, 100.0f/255.0f, 0.0f,   DEST_FIELD, NULL, "throttle" },
+
+    // ---- GM enhanced, mode 22 ---------------------------------------------
+    // Neither of these exists as a standard mode 01 PID, which is why both
+    // tiles sat at "--". HP Tuners reads them off this same bus, so the data
+    // is there; it is just behind manufacturer-proprietary PIDs that have to
+    // be asked for by physical address rather than functionally.
+    //
+    // PID and formula from eigger/espcomponents ble_elm327 presets.py, which
+    // carries 49 GM mode 22 definitions with per-PID maths -- the first source
+    // found that publishes formulas rather than just PID numbers. Its
+    // gm_trans_temp agrees with every other source, which is some evidence the
+    // rest is not invented.
+    //
+    // It lists two oil pressure PIDs and they disagree about which ECU family
+    // they suit:
+    //     gm_oil_pressure      115C   (A * 0.65) - 17.5
+    //     gm_oil_pressure_alt  1470    A * 3.985
+    // 115C is the unsuffixed one, so it goes in first. If it answers 0x7F, try
+    // 1470 with a scale of 3.985 and no offset.
+    //
+    // A hot LT4 idles near 25 psi and shows 60-70 at 3000 rpm. HP Tuners
+    // already reads this on the car, so put the two side by side -- that is a
+    // direct check of both PID and formula in one go.
+    { 0x115C, 1,  300, 0.65f, -17.5f, DEST_FIELD, NULL, "oil psi",
+      0x22, OBD_ECM_REQ, OBD_ECU_ID },
+
+    // Transmission fluid temp, A - 40 degC, from the TCM rather than the
+    // engine. Widely reported for the 8L90E and the one number that actually
+    // kills these boxes.
+    { 0x1940, 1,  600, 1.8f, -40.0f, DEST_FIELD, NULL, "trans temp",
+      0x22, OBD_TCM_REQ, OBD_TCM_ID },
+
+    // Engaged gear straight from the transmission. This makes the RPM/speed
+    // ratio estimate on gauge two a fallback rather than the primary source --
+    // the TCM cannot be wrong about tyre diameter.
+    { 0x199A, 1,  200, 1.0f, 0.0f, DEST_FIELD, NULL, "gear",
+      0x22, OBD_TCM_REQ, OBD_TCM_ID },
+
+    // PRNDL. The enum this returns is NOT known to match the broadcast one
+    // gm.json decodes, which is 0 Park, 1 Neutral, 2 Drive, 3 Reverse. If the
+    // letter is wrong, that mapping in can_mapping_task is what to change.
+    { 0x1951, 1,  200, 1.0f, 0.0f, DEST_FIELD, NULL, "prndl",
+      0x22, OBD_TCM_REQ, OBD_TCM_ID },
+
+    // Knock retard, degrees of timing pulled. On a supercharged motor this is
+    // the number worth a tile: it moves before anything else does when the
+    // charge temp, fuel or timing is wrong, and it reads a clean zero when
+    // nothing is happening.
+    { 0x11A6, 1,  200, 0.0878906f, 0.0f, DEST_FIELD, NULL, "knock",
+      0x22, OBD_ECM_REQ, OBD_ECU_ID },
 };
 
 #define PID_COUNT (sizeof(s_pids)/sizeof(s_pids[0]))
@@ -96,6 +151,13 @@ static void bind_targets(void)
             case 0x44: s_targets[i] = (float *)&can_data.air_fuel_ratio; break;
             case 0x0D: s_targets[i] = (float *)&can_data.speed;          break;
             case 0x0C: s_targets[i] = (float *)&can_data.rpm;            break;
+            case 0x52: s_targets[i] = (float *)&can_data.fuel_comp;      break;
+            case 0x11: s_targets[i] = (float *)&can_data.throttle_pct;   break;
+            case 0x115C: s_targets[i] = (float *)&can_data.oil_pressure; break;
+            case 0x1940: s_targets[i] = (float *)&can_data.trans_temp;   break;
+            case 0x199A: s_targets[i] = (float *)&can_data.gear_num;     break;
+            case 0x1951: s_targets[i] = (float *)&can_data.gear_sel;     break;
+            case 0x11A6: s_targets[i] = (float *)&can_data.knock_retard; break;
             default:   s_targets[i] = NULL;                              break;
         }
     }
