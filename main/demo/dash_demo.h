@@ -22,6 +22,19 @@ extern "C" {
 // 1 = simulated engine, 0 = real sensors / CAN.
 #define DASH_DEMO_MODE 0
 
+// Bench test for the gauge-to-gauge bridge, with no vehicle involved.
+//
+// Normally the demo writes straight into the display globals and the CAN stack
+// never starts, so there is nothing for the bridge to send. With this on, the
+// demo also feeds can_data and the CAN driver comes up, so the publisher
+// broadcasts the sweep and the other gauge shows it. Two gauges wired to each
+// other are a valid bus -- each ACKs the other -- so this needs no ECU.
+//
+// Set on the PUBLISHER only, alongside DASH_DEMO_MODE 1 and
+// CAN_BRIDGE_MODE CAN_BRIDGE_PUBLISH. The subscriber stays in its normal
+// configuration.
+#define DASH_DEMO_OVER_BRIDGE 0
+
 // Walk each tile past its warning threshold in turn so the red flashes can be
 // verified on the bench. 0 = plausible values only, nothing ever alarms.
 #define DEMO_EXERCISE_WARNINGS 1
