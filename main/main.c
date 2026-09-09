@@ -550,6 +550,19 @@ static int detect_gear(float rpm, float mph, float dt)
     return current_gear;
 }
 
+#if DASH_DEMO_MODE && DASH_DEMO_OVER_BRIDGE
+// can_mapping_task normally drives the publisher, and it does not run in demo
+// mode, so the bench test needs its own ticker. can_bridge_publish rate-limits
+// itself, so this only has to call often enough not to be the limit.
+static void bridge_pub_task(void *arg)
+{
+    while (1) {
+        can_bridge_publish();
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+#endif
+
 void gauge_timer(lv_timer_t * t) {
 
 #if DASH_DEMO_MODE
@@ -563,6 +576,18 @@ void gauge_timer(lv_timer_t * t) {
     g_gauge_data.water_temp_f     = demo.water_f;
     g_gauge_data.oil_temp_f       = demo.oil_temp_f;
     g_gauge_data.trans_temp_f     = demo.trans_f;
+
+#if DASH_DEMO_OVER_BRIDGE
+    // The bridge publishes out of can_data, not the display globals, so the
+    // sweep has to land there too or the frames go out empty.
+    can_data.rpm          = demo.rpm;
+    can_data.speed        = demo.speed_mph;
+    can_data.fuel_level   = demo.fuel_pct;
+    can_data.oil_pressure = demo.oil_psi;
+    can_data.coolant_temp = demo.water_f;
+    can_data.oil_temp     = demo.oil_temp_f;
+    can_data.trans_temp   = demo.trans_f;
+#endif
 #endif
 
     // Smooth the needle so it sweeps instead of snapping.
@@ -1092,6 +1117,14 @@ void app_main(void) {
     // Simulated engine only -- the sensor tasks stay off so they can't fight
     // the demo for the same globals.
     dash_demo_start();
+#if DASH_DEMO_OVER_BRIDGE
+    // Bench bridge test: bring CAN up so the sweep can go out. canbus_task
+    // still runs because the publisher has to hear its own ids arriving from
+    // elsewhere to detect a collision.
+    canbus_init();
+    xTaskCreatePinnedToCore(canbus_task, "can_rx", 4096, NULL, 10, NULL, 0);
+    xTaskCreatePinnedToCore(bridge_pub_task, "bridge_tx", 3072, NULL, 9, NULL, 1);
+#endif
 #else
     if (SENSOR_SOURCE == SENSOR_SOURCE_CAN){
         canbus_init();
