@@ -228,7 +228,7 @@ static int64_t boot_time_ms = 0;
 // 33.3k single-wire bus this hardware cannot read.
 //
 // SET THESE FOR THE CAR. They are the only vehicle-specific numbers here.
-#define FINAL_DRIVE_RATIO   3.42f
+#define FINAL_DRIVE_RATIO   2.73f
 #define TYRE_DIAMETER_IN    26.0f
 
 #define RPM_PER_MPH(ratio)  ((ratio) * FINAL_DRIVE_RATIO * 336.0f / TYRE_DIAMETER_IN)
