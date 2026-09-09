@@ -122,6 +122,15 @@ static const obd_pid_t s_pids[] = {
     // 115C is the unsuffixed one, so it goes in first. If it answers 0x7F, try
     // 1470 with a scale of 3.985 and no offset.
     //
+    // 115C is corroborated independently by dchad/OBD-Monitor, whose notes
+    // record it as a hand-built custom PID because it is not in the extended
+    // set. That source writes the equation as (A * .065) - 17.5, a tenth of
+    // the scale used here, but it cannot be right for a single byte: 255 *
+    // 0.065 - 17.5 is negative, so the gauge could never read above zero. Its
+    // own note mentions a steady 42 psi observed, which needs A = 92 at 0.65
+    // and A = 915 at 0.065 -- out of range for one byte. The decimal point is
+    // in the wrong place there, not here.
+    //
     // A hot LT4 idles near 25 psi and shows 60-70 at 3000 rpm. HP Tuners
     // already reads this on the car, so put the two side by side -- that is a
     // direct check of both PID and formula in one go.
