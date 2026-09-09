@@ -104,13 +104,23 @@ static const obd_pid_t s_pids[] = {
     // is there; it is just behind manufacturer-proprietary PIDs that have to
     // be asked for by physical address rather than functionally.
     //
-    // SCALING IS UNVERIFIED. Oil pressure follows the encoding GMLAN uses for
-    // the same value on the low-speed bus -- one byte of 4 kPa units -- which
-    // is a reasonable guess and nothing more. If the reading is out by a
-    // constant factor, this is the line to change. A running LT4 should show
-    // roughly 25 psi hot idle and 60-70 psi at 3000 rpm; if it reads a quarter
-    // or four times that, the units are wrong rather than the PID.
-    { 0x1470, 1,  300, 4.0f * KPA_TO_PSI, 0.0f, DEST_FIELD, NULL, "oil psi",
+    // PID and formula from eigger/espcomponents ble_elm327 presets.py, which
+    // carries 49 GM mode 22 definitions with per-PID maths -- the first source
+    // found that publishes formulas rather than just PID numbers. Its
+    // gm_trans_temp agrees with every other source, which is some evidence the
+    // rest is not invented.
+    //
+    // It lists two oil pressure PIDs and they disagree about which ECU family
+    // they suit:
+    //     gm_oil_pressure      115C   (A * 0.65) - 17.5
+    //     gm_oil_pressure_alt  1470    A * 3.985
+    // 115C is the unsuffixed one, so it goes in first. If it answers 0x7F, try
+    // 1470 with a scale of 3.985 and no offset.
+    //
+    // A hot LT4 idles near 25 psi and shows 60-70 at 3000 rpm. HP Tuners
+    // already reads this on the car, so put the two side by side -- that is a
+    // direct check of both PID and formula in one go.
+    { 0x115C, 1,  300, 0.65f, -17.5f, DEST_FIELD, NULL, "oil psi",
       0x22, OBD_ECM_REQ, OBD_ECU_ID },
 
     // Transmission fluid temp, A - 40 degC, from the TCM rather than the
@@ -153,7 +163,7 @@ static void bind_targets(void)
             case 0x23: s_targets[i] = (float *)&can_data.fuel_pressure;  break;
             case 0x0F: s_targets[i] = (float *)&can_data.air_temp;       break;
             case 0x52: s_targets[i] = (float *)&can_data.fuel_comp;      break;
-            case 0x1470: s_targets[i] = (float *)&can_data.oil_pressure; break;
+            case 0x115C: s_targets[i] = (float *)&can_data.oil_pressure; break;
             case 0x1940: s_targets[i] = (float *)&can_data.trans_temp;   break;
             default:   s_targets[i] = NULL;                              break;
         }
