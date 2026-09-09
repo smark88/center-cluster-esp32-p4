@@ -85,6 +85,12 @@ static const obd_pid_t s_pids[] = {
 
     // Barometric pressure, A kPa. Also raw.
     { 0x33, 1, 5000, 1.0f,          0.0f,   DEST_BARO,  NULL, "baro" },
+
+    // Ethanol content, A * 100 / 255 percent. This is standard J1979, not a
+    // GM enhanced PID, so no mode 22 is needed -- a flex-fuel car answers it
+    // and anything else returns a negative response and the tile stays "--".
+    // Blend only changes when fuel is added, so it can idle in the background.
+    { 0x52, 1, 5000, 100.0f/255.0f, 0.0f,   DEST_FIELD, NULL, "ethanol" },
 };
 
 // NOT AVAILABLE as standard mode 01, and so not polled here:
@@ -119,6 +125,7 @@ static void bind_targets(void)
             case 0x44: s_targets[i] = (float *)&can_data.air_fuel_ratio; break;
             case 0x23: s_targets[i] = (float *)&can_data.fuel_pressure;  break;
             case 0x0F: s_targets[i] = (float *)&can_data.air_temp;       break;
+            case 0x52: s_targets[i] = (float *)&can_data.fuel_comp;      break;
             default:   s_targets[i] = NULL;                              break;
         }
     }
