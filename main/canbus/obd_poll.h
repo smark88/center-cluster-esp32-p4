@@ -44,6 +44,15 @@ extern "C" {
 // obd_poll_handle_frame.
 #define OBD_ECU_ID    0x7E8
 
+// GM enhanced diagnostics. Oil pressure and transmission temperature have no
+// standard mode 01 PID -- HP Tuners reads them off this same bus as mode 22
+// PIDs, which are manufacturer proprietary and physically addressed rather
+// than functional. The transmission answers as its own module, so it needs a
+// different request and reply pair from the engine.
+#define OBD_ECM_REQ   0x7E0
+#define OBD_TCM_REQ   0x7E2
+#define OBD_TCM_ID    0x7EA
+
 // Starts the polling task. Call after canbus_init().
 void obd_poll_start(void);
 

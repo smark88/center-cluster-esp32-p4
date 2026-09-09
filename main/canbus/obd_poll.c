@@ -21,7 +21,7 @@ typedef enum {
 } obd_dest_t;
 
 typedef struct {
-    uint8_t     pid;
+    uint16_t    pid;        // one byte for mode 01, two for mode 22
     uint8_t     nbytes;     // data bytes that make up the value, 1 or 2
     uint16_t    period_ms;  // how often to ask; matched to how fast it moves
     float       scale;
@@ -29,6 +29,12 @@ typedef struct {
     obd_dest_t  dest;
     float      *target;     // used when dest is DEST_FIELD
     const char *name;
+    // Everything below is optional and left zero for the common case: standard
+    // mode 01, functional request to 0x7DF, answered by the ECM at 0x7E8. Only
+    // the GM enhanced entries fill them in.
+    uint8_t     mode;       // 0 or 0x01 = mode 01, 0x22 = GM enhanced
+    uint16_t    req_id;     // 0 = OBD_REQ_ID
+    uint16_t    resp_id;    // 0 = OBD_ECU_ID
 } obd_pid_t;
 
 // Scales fold the unit conversion in, same contract as the protocol jsons:
@@ -91,6 +97,27 @@ static const obd_pid_t s_pids[] = {
     // and anything else returns a negative response and the tile stays "--".
     // Blend only changes when fuel is added, so it can idle in the background.
     { 0x52, 1, 5000, 100.0f/255.0f, 0.0f,   DEST_FIELD, NULL, "ethanol" },
+
+    // ---- GM enhanced, mode 22 ---------------------------------------------
+    // Neither of these exists as a standard mode 01 PID, which is why both
+    // tiles sat at "--". HP Tuners reads them off this same bus, so the data
+    // is there; it is just behind manufacturer-proprietary PIDs that have to
+    // be asked for by physical address rather than functionally.
+    //
+    // SCALING IS UNVERIFIED. Oil pressure follows the encoding GMLAN uses for
+    // the same value on the low-speed bus -- one byte of 4 kPa units -- which
+    // is a reasonable guess and nothing more. If the reading is out by a
+    // constant factor, this is the line to change. A running LT4 should show
+    // roughly 25 psi hot idle and 60-70 psi at 3000 rpm; if it reads a quarter
+    // or four times that, the units are wrong rather than the PID.
+    { 0x1470, 1,  300, 4.0f * KPA_TO_PSI, 0.0f, DEST_FIELD, NULL, "oil psi",
+      0x22, OBD_ECM_REQ, OBD_ECU_ID },
+
+    // Transmission fluid temp, A - 40 degC, from the TCM rather than the
+    // engine. Widely reported for the 8L90E and the one number that actually
+    // kills these boxes.
+    { 0x1940, 1,  600, 1.8f, -40.0f, DEST_FIELD, NULL, "trans temp",
+      0x22, OBD_TCM_REQ, OBD_TCM_ID },
 };
 
 // NOT AVAILABLE as standard mode 01, and so not polled here:
@@ -126,24 +153,42 @@ static void bind_targets(void)
             case 0x23: s_targets[i] = (float *)&can_data.fuel_pressure;  break;
             case 0x0F: s_targets[i] = (float *)&can_data.air_temp;       break;
             case 0x52: s_targets[i] = (float *)&can_data.fuel_comp;      break;
+            case 0x1470: s_targets[i] = (float *)&can_data.oil_pressure; break;
+            case 0x1940: s_targets[i] = (float *)&can_data.trans_temp;   break;
             default:   s_targets[i] = NULL;                              break;
         }
     }
 }
 
-static void send_request(uint8_t pid)
+static void send_request(const obd_pid_t *p)
 {
+    uint8_t mode = p->mode ? p->mode : 0x01;
+
     twai_message_t msg = {0};
-    msg.identifier = OBD_REQ_ID;
+    msg.identifier = p->req_id ? p->req_id : OBD_REQ_ID;
     msg.data_length_code = 8;
-    msg.data[0] = 0x02;      // 2 more bytes follow
-    msg.data[1] = 0x01;      // mode 01, current data
-    msg.data[2] = pid;
-    msg.data[3] = 0xAA;      // padding, ignored by the ECU
-    msg.data[4] = 0xAA;
-    msg.data[5] = 0xAA;
-    msg.data[6] = 0xAA;
-    msg.data[7] = 0xAA;
+
+    if (mode == 0x22) {
+        // Enhanced PIDs are two bytes, so the frame carries one more byte
+        // than a mode 01 request and the length reflects that.
+        msg.data[0] = 0x03;
+        msg.data[1] = 0x22;
+        msg.data[2] = (uint8_t)(p->pid >> 8);
+        msg.data[3] = (uint8_t)(p->pid & 0xFF);
+        msg.data[4] = 0xAA;      // padding, ignored
+        msg.data[5] = 0xAA;
+        msg.data[6] = 0xAA;
+        msg.data[7] = 0xAA;
+    } else {
+        msg.data[0] = 0x02;      // 2 more bytes follow
+        msg.data[1] = 0x01;      // mode 01, current data
+        msg.data[2] = (uint8_t)p->pid;
+        msg.data[3] = 0xAA;      // padding, ignored by the ECU
+        msg.data[4] = 0xAA;
+        msg.data[5] = 0xAA;
+        msg.data[6] = 0xAA;
+        msg.data[7] = 0xAA;
+    }
 
     // Never block the task on a full queue; a dropped request just means this
     // PID is refreshed on the next lap.
@@ -154,35 +199,56 @@ bool obd_poll_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
 {
     if (id < OBD_RESP_LO || id > OBD_RESP_HI)
         return false;
-
-    // Requests go out on 0x7DF, the functional address, so every OBD-capable
-    // module on the bus answers -- and more than one will claim the same PID.
-    // On an FR-S a second module reports coolant as 0, which the A*1.8-40
-    // scaling turns into a clean -40 degF, so the tile flips between the real
-    // reading and -40 depending on which reply landed last. Only the primary
-    // powertrain ECU is authoritative, so ignore the rest.
-    if (id != OBD_ECU_ID)
-        return true;                  // ours, just not the module we trust
     if (dlc < 3)
         return true;                  // ours, but malformed
 
-    // [len][0x41][pid][A][B]...   0x41 = positive reply to mode 01
-    if (data[1] != 0x41)
-        return true;
+    // [len][service][pid...][A][B]...
+    // 0x41 answers mode 01 and echoes a one byte pid; 0x62 answers mode 22 and
+    // echoes two. Anything else is a negative response (0x7F when the module
+    // does not support the pid) or not for us.
+    uint16_t pid;
+    int      first;                   // index of data byte A
 
-    uint8_t pid = data[2];
+    if (data[1] == 0x41) {
+        pid   = data[2];
+        first = 3;
+    } else if (data[1] == 0x62) {
+        if (dlc < 4)
+            return true;
+        pid   = ((uint16_t)data[2] << 8) | data[3];
+        first = 4;
+    } else {
+        return true;
+    }
 
     for (int i = 0; i < PID_COUNT; i++) {
         if (s_pids[i].pid != pid)
             continue;
 
+        // A one byte mode 01 pid and a two byte mode 22 pid could in principle
+        // collide numerically, so the service has to agree as well.
+        uint8_t mode = s_pids[i].mode ? s_pids[i].mode : 0x01;
+        if ((data[1] == 0x41) != (mode == 0x01))
+            continue;
+
+        // Requests go out functionally on 0x7DF unless the entry says
+        // otherwise, so every OBD-capable module answers and more than one
+        // will claim the same pid. On an FR-S a second module reports coolant
+        // as 0, which the A*1.8-40 scaling turns into a clean -40 degF, so the
+        // tile flips between the real reading and -40 depending on which reply
+        // landed last. Only the module that owns the value is authoritative --
+        // the ECM for engine data, the TCM for transmission data.
+        uint16_t expect = s_pids[i].resp_id ? s_pids[i].resp_id : OBD_ECU_ID;
+        if (id != expect)
+            return true;              // right pid, wrong module
+
         uint32_t raw;
         if (s_pids[i].nbytes == 2) {
-            if (dlc < 5) return true;
-            raw = ((uint32_t)data[3] << 8) | data[4];
+            if (dlc < first + 2) return true;
+            raw = ((uint32_t)data[first] << 8) | data[first + 1];
         } else {
-            if (dlc < 4) return true;
-            raw = data[3];
+            if (dlc < first + 1) return true;
+            raw = data[first];
         }
 
         float value = raw * s_pids[i].scale + s_pids[i].offset;
@@ -216,7 +282,7 @@ static void obd_poll_task(void *arg)
         // One request per tick at most, so two PIDs never collide on the bus.
         for (int i = 0; i < PID_COUNT; i++) {
             if (now >= s_due_ms[i]) {
-                send_request(s_pids[i].pid);
+                send_request(&s_pids[i]);
                 s_due_ms[i] = now + s_pids[i].period_ms;
                 break;
             }
