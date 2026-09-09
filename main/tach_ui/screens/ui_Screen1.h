@@ -21,24 +21,17 @@ extern "C" {
 // A tile flashes red while its reading is outside these limits.
 // ---------------------------------------------------------------------------
 #define WARN_IAT_MAX        170.0f   // flash above this
-#define WARN_FUEL_PSI_MIN   40.0f    // flash below this
 #define WARN_AFR_MAX        14.0f    // flash above this, but only under load
 
 // Lean only matters under load -- cruise and overrun run lean by design, so
 // the AFR warning is gated on the engine actually pulling.
 #define WARN_AFR_MIN_RPM    2000
 
-// A stopped engine has no fuel pressure, so the tile would sit flashing any
-// time the key is on and the engine is not running. Gate it on the engine
-// actually turning; cranking is around 200 rpm and idle well above 600, so
-// 400 separates the two without waiting for a clean idle.
-#define WARN_FUEL_PSI_MIN_RPM 400
 
 // Hysteresis: a tile clears only once the reading has recovered past the
 // limit by this much, so a value sitting exactly on the threshold does not
 // strobe on and off.
 #define WARN_IAT_CLEAR      165.0f
-#define WARN_FUEL_PSI_CLEAR  43.0f
 #define WARN_AFR_CLEAR       13.7f
 
 // Once tripped, a tile stays lit at least this long. A fuel pressure dip can
@@ -59,7 +52,7 @@ extern lv_obj_t *ui_speed_arc;           // lv_arc, range 0..DIAL_MAX_MPH
 extern lv_obj_t *ui_label_mph_value;
 extern lv_obj_t *ui_label_gear_value;
 extern lv_obj_t *ui_val_iat;
-extern lv_obj_t *ui_val_fuel_psi;
+extern lv_obj_t *ui_val_ethanol;
 extern lv_obj_t *ui_val_afr;
 extern lv_obj_t *ui_val_boost;
 
@@ -72,7 +65,7 @@ void ui_dash_set_speed_mph(float mph);
 void ui_dash_set_rpm(int rpm);
 
 void ui_dash_set_iat_f(float degf);
-void ui_dash_set_fuel_psi(float psi);
+void ui_dash_set_ethanol(float pct);
 void ui_dash_set_afr(float afr);
 void ui_dash_set_boost_psi(float psi);
 

@@ -208,22 +208,42 @@ static int64_t boot_time_ms = 0;
 #define GEAR_SHIFT_LOCK_TIME    0.25f
 #define GEAR_SLIP_RPM_RATE      2200.0f
 
+// How much nearer the best ratio match must be than the second best before the
+// gear changes. Below 0.5 means "clearly nearer", not merely nearer.
+#define GEAR_MATCH_MARGIN       0.40f
 
-/**
-This is setup for a JDM STi 6spd
-For your use case you would need to calculate a value for each gear using
+// Matches the OBD poll period for RPM. Sampling faster than the data arrives
+// makes the rate-of-change tests meaningless.
+#define GEAR_SAMPLE_MS          100
 
-    RPM_per_MPH = (GearRatio × FinalDrive × 336) / TireDiameter 
 
-and add that to each below in the table.
-**/
-static const float gear_table[6] = {
-    193.0f,  // 1
-    126.0f,  // 2
-    93.0f,   // 3
-    71.0f,   // 4
-    56.0f,   // 5
-    44.0f    // 6
+// Drive gear is computed from engine RPM against vehicle speed rather than
+// decoded off the bus. Speed is proportional to output shaft speed through the
+// final drive and tyre, so RPM/MPH lands on a fixed value per gear:
+//
+//     RPM_per_MPH = (GearRatio * FinalDrive * 336) / TyreDiameterInches
+//
+// That costs nothing extra -- both inputs already arrive over the bridge --
+// and it avoids needing the transmission's own gear frame, which lives on the
+// 33.3k single-wire bus this hardware cannot read.
+//
+// SET THESE FOR THE CAR. They are the only vehicle-specific numbers here.
+#define FINAL_DRIVE_RATIO   3.42f
+#define TYRE_DIAMETER_IN    26.0f
+
+#define RPM_PER_MPH(ratio)  ((ratio) * FINAL_DRIVE_RATIO * 336.0f / TYRE_DIAMETER_IN)
+
+// GM 8L90E.
+#define GEAR_COUNT 8
+static const float gear_table[GEAR_COUNT] = {
+    RPM_PER_MPH(4.56f),   // 1
+    RPM_PER_MPH(2.97f),   // 2
+    RPM_PER_MPH(2.08f),   // 3
+    RPM_PER_MPH(1.69f),   // 4
+    RPM_PER_MPH(1.27f),   // 5
+    RPM_PER_MPH(1.00f),   // 6
+    RPM_PER_MPH(0.85f),   // 7
+    RPM_PER_MPH(0.65f),   // 8
 };
 
 static float gear_filtered_ratio = 0;
@@ -508,7 +528,7 @@ static int detect_gear(float rpm, float mph, float dt)
     filtered_ratio += 0.2f * (ratio - filtered_ratio);
 
     // ---------- FORCE 1ST DURING LAUNCH ----------
-    if (mph < 12.0f && filtered_ratio > 150.0f) {
+    if (mph < 12.0f && filtered_ratio > gear_table[0] * 0.75f) {
         current_gear = 1;
         return 1;
     }
@@ -532,21 +552,28 @@ static int detect_gear(float rpm, float mph, float dt)
     }
 
     // ---------- NORMAL GEAR MATCH ----------
-    float smallest_error = 9999.0f;
+    // Nearest ratio wins, but only when it is clearly nearer than the runner
+    // up. A fixed tolerance cannot work across eight gears: on a 3.42 final
+    // drive 1st and 2nd sit about 70 RPM/MPH apart while 7th and 8th are under
+    // 10, so any single window either refuses to leave 1st or flickers among
+    // the top three. Judging against the gap to the next candidate scales with
+    // the spacing on its own.
+    float best_err = 9999.0f, second_err = 9999.0f;
     int best = current_gear;
 
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < GEAR_COUNT; i++) {
         float err = fabsf(filtered_ratio - gear_table[i]);
-        if (err < smallest_error) {
-            smallest_error = err;
-            best = i + 1;
+        if (err < best_err) {
+            second_err = best_err;
+            best_err   = err;
+            best       = i + 1;
+        } else if (err < second_err) {
+            second_err = err;
         }
     }
 
-    // Only switch if clearly closer than current gear
-    if (smallest_error < 18.0f) {
+    if (best_err < GEAR_MATCH_MARGIN * second_err)
         current_gear = best;
-    }
 
     return current_gear;
 }
@@ -632,7 +659,7 @@ void gauge_timer(lv_timer_t * t) {
 
     // The four tiles. Any value left at NAN renders as "--".
     ui_dash_set_iat_f(g_gauge_data.iat_f);
-    ui_dash_set_fuel_psi(g_gauge_data.fuel_pressure_psi);
+    ui_dash_set_ethanol(g_gauge_data.fuel_comp);
     ui_dash_set_afr(g_gauge_data.afr);
     ui_dash_set_boost_psi(g_gauge_data.boost_psi);
 }
@@ -1013,14 +1040,33 @@ static void can_mapping_task(void *arg){
         g_gauge_data.fuel_pressure_psi = can_data.fuel_pressure;
 
         // GM PRNDL enum: 0 Park, 1 Neutral, 2 Drive, 3 Reverse. Other
-        // protocols may number these differently -- remap here if so.
+        // protocols may number these differently -- remap here if so. This
+        // still needs a broadcast protocol; with CAN_PROTOCOL_NAME "none" the
+        // letter stays blank while the number below keeps working.
         {
             static const char prndl[] = { 'P', 'N', 'D', 'R' };
             int sel = (int)can_data.gear_sel;
             ui_dash_set_gear((sel >= 0 && sel < 4) ? prndl[sel] : 0);
 
-            int g = (int)can_data.gear_num;
-            ui_dash_set_drive_gear((g >= 1 && g <= 8) ? g : 0);
+            // Engaged gear is computed from RPM against speed, not read off
+            // the bus: can_data.gear_num comes from the 33.3k single-wire bus
+            // this hardware cannot reach, so it was permanently zero.
+            // Rate limited to the period RPM actually arrives on. This loop
+            // runs every 10ms but rpm refreshes at 100ms over the bridge, so
+            // calling every pass would feed detect_gear a 100ms step divided
+            // by a 10ms dt -- an apparent 20000 RPM/sec, which trips its
+            // clutch-slip test and drops the display to neutral on every
+            // update.
+            static int64_t gear_last_ms = 0;
+            if (now_ms - gear_last_ms >= GEAR_SAMPLE_MS) {
+                float dt = (gear_last_ms == 0)
+                             ? GEAR_SAMPLE_MS / 1000.0f
+                             : (now_ms - gear_last_ms) / 1000.0f;
+                gear_last_ms = now_ms;
+
+                int g = detect_gear(can_data.rpm, can_data.speed, dt);
+                ui_dash_set_drive_gear((g >= 1 && g <= GEAR_COUNT) ? g : 0);
+            }
         }
         g_gauge_data.afr = can_data.air_fuel_ratio;
         g_gauge_data.boost_psi = can_data.boost;

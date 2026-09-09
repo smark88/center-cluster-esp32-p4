@@ -88,7 +88,7 @@ lv_obj_t *ui_speed_arc = NULL;
 lv_obj_t *ui_label_mph_value = NULL;
 lv_obj_t *ui_label_gear_value = NULL;
 lv_obj_t *ui_val_iat = NULL;
-lv_obj_t *ui_val_fuel_psi = NULL;
+lv_obj_t *ui_val_ethanol = NULL;
 lv_obj_t *ui_val_afr = NULL;
 lv_obj_t *ui_val_boost = NULL;
 
@@ -97,7 +97,7 @@ static lv_point_t s_tick_pts[TICK_COUNT][2];
 
 // ------------------------------------------------------------- tile alarms --
 
-enum { TILE_IAT = 0, TILE_FUEL_PSI, TILE_AFR, TILE_BOOST, TILE_COUNT };
+enum { TILE_IAT = 0, TILE_ETHANOL, TILE_AFR, TILE_BOOST, TILE_COUNT };
 
 typedef struct {
     lv_obj_t *tile;         // for the border and ring
@@ -437,7 +437,7 @@ void ui_Screen1_screen_init(void)
 
     // ---- Four sensor tiles ----
     ui_val_iat      = make_tile(ui_Screen1, "IAT",      S(-TILE_DX), S(TILE_ROW1_DY), TILE_IAT);
-    ui_val_fuel_psi = make_tile(ui_Screen1, "FUEL PSI",  S(TILE_DX), S(TILE_ROW1_DY), TILE_FUEL_PSI);
+    ui_val_ethanol  = make_tile(ui_Screen1, "ETHANOL",   S(TILE_DX), S(TILE_ROW1_DY), TILE_ETHANOL);
     ui_val_afr      = make_tile(ui_Screen1, "AFR",      S(-TILE_DX), S(TILE_ROW2_DY), TILE_AFR);
     ui_val_boost    = make_tile(ui_Screen1, "BOOST",     S(TILE_DX), S(TILE_ROW2_DY), TILE_BOOST);
 
@@ -456,7 +456,7 @@ void ui_Screen1_screen_destroy(void)
     ui_label_mph_value = NULL;
     ui_label_gear_value = NULL;
     ui_val_iat = NULL;
-    ui_val_fuel_psi = NULL;
+    ui_val_ethanol = NULL;
     ui_val_afr = NULL;
     ui_val_boost = NULL;
 
@@ -514,15 +514,12 @@ void ui_dash_set_iat_f(float degf)
         (s_tiles[TILE_IAT].alarm ? degf > WARN_IAT_CLEAR : degf > WARN_IAT_MAX));
 }
 
-void ui_dash_set_fuel_psi(float psi)
+void ui_dash_set_ethanol(float pct)
 {
-    set_value(ui_val_fuel_psi, psi, "%.0f");
-    // A stopped engine reads zero psi, which is not a fault -- gate on the
-    // engine actually turning, the same way the AFR warning is gated on load.
-    set_alarm(TILE_FUEL_PSI,
-        !isnan(psi) && s_last_rpm >= WARN_FUEL_PSI_MIN_RPM &&
-        (s_tiles[TILE_FUEL_PSI].alarm ? psi < WARN_FUEL_PSI_CLEAR
-                                      : psi < WARN_FUEL_PSI_MIN));
+    // No alarm. Ethanol content has no failure band -- E85 is not a fault,
+    // it is a fuel choice, and the tune either accounts for it or does not.
+    // The tile keeps its slot in s_tiles so the layout is unchanged.
+    set_value(ui_val_ethanol, pct, "%.0f");
 }
 
 void ui_dash_set_afr(float afr)
