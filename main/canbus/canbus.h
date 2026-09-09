@@ -34,6 +34,8 @@ typedef struct{
     float fuel_pressure;    // psi
     float gear_sel;         // selector position, protocol specific enum
     float gear_num;         // engaged gear, 1..8
+    float knock_retard;     // degrees of timing pulled
+    float throttle_pct;     // 0-100, not displayed -- carried for logic
 } can_dash_data_t;
 
 

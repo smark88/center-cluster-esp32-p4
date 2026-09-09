@@ -98,6 +98,11 @@ static const obd_pid_t s_pids[] = {
     // Blend only changes when fuel is added, so it can idle in the background.
     { 0x52, 1, 5000, 100.0f/255.0f, 0.0f,   DEST_FIELD, NULL, "ethanol" },
 
+    // Throttle position, A * 100 / 255 percent. Not on any tile -- carried
+    // because knock and gear both only mean something under throttle, and
+    // having it costs one slot that was spare anyway.
+    { 0x11, 1,  200, 100.0f/255.0f, 0.0f,   DEST_FIELD, NULL, "throttle" },
+
     // ---- GM enhanced, mode 22 ---------------------------------------------
     // Neither of these exists as a standard mode 01 PID, which is why both
     // tiles sat at "--". HP Tuners reads them off this same bus, so the data
@@ -128,6 +133,25 @@ static const obd_pid_t s_pids[] = {
     // kills these boxes.
     { 0x1940, 1,  600, 1.8f, -40.0f, DEST_FIELD, NULL, "trans temp",
       0x22, OBD_TCM_REQ, OBD_TCM_ID },
+
+    // Engaged gear straight from the transmission. This makes the RPM/speed
+    // ratio estimate on gauge two a fallback rather than the primary source --
+    // the TCM cannot be wrong about tyre diameter.
+    { 0x199A, 1,  200, 1.0f, 0.0f, DEST_FIELD, NULL, "gear",
+      0x22, OBD_TCM_REQ, OBD_TCM_ID },
+
+    // PRNDL. The enum this returns is NOT known to match the broadcast one
+    // gm.json decodes, which is 0 Park, 1 Neutral, 2 Drive, 3 Reverse. If the
+    // letter is wrong, that mapping in can_mapping_task is what to change.
+    { 0x1951, 1,  200, 1.0f, 0.0f, DEST_FIELD, NULL, "prndl",
+      0x22, OBD_TCM_REQ, OBD_TCM_ID },
+
+    // Knock retard, degrees of timing pulled. On a supercharged motor this is
+    // the number worth a tile: it moves before anything else does when the
+    // charge temp, fuel or timing is wrong, and it reads a clean zero when
+    // nothing is happening.
+    { 0x11A6, 1,  200, 0.0878906f, 0.0f, DEST_FIELD, NULL, "knock",
+      0x22, OBD_ECM_REQ, OBD_ECU_ID },
 };
 
 // NOT AVAILABLE as standard mode 01, and so not polled here:
@@ -163,8 +187,12 @@ static void bind_targets(void)
             case 0x23: s_targets[i] = (float *)&can_data.fuel_pressure;  break;
             case 0x0F: s_targets[i] = (float *)&can_data.air_temp;       break;
             case 0x52: s_targets[i] = (float *)&can_data.fuel_comp;      break;
+            case 0x11: s_targets[i] = (float *)&can_data.throttle_pct;   break;
             case 0x115C: s_targets[i] = (float *)&can_data.oil_pressure; break;
             case 0x1940: s_targets[i] = (float *)&can_data.trans_temp;   break;
+            case 0x199A: s_targets[i] = (float *)&can_data.gear_num;     break;
+            case 0x1951: s_targets[i] = (float *)&can_data.gear_sel;     break;
+            case 0x11A6: s_targets[i] = (float *)&can_data.knock_retard; break;
             default:   s_targets[i] = NULL;                              break;
         }
     }
