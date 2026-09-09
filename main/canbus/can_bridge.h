@@ -59,6 +59,14 @@ extern "C" {
 // over a thousand.
 #define CAN_BRIDGE_PERIOD_MS  50
 
+// Log what crosses the bridge, once a second. The publisher prints the raw
+// slots it packed, the subscriber prints what it decoded. Useful on a bench
+// where two gauges are wired to each other with no ECU present: the values
+// will all be empty, but the frames arriving prove the wiring, termination
+// and ids are right, which is the part that cannot be checked any other way
+// without a car.
+#define CAN_BRIDGE_DEBUG      0
+
 // Call every loop on the publisher; it rate-limits itself.
 void can_bridge_publish(void);
 

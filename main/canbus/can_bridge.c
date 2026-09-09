@@ -93,6 +93,12 @@ void can_bridge_publish(void)
         return;
     next_ms = now + CAN_BRIDGE_PERIOD_MS;
 
+#if CAN_BRIDGE_DEBUG
+    static int64_t dbg_ms = 0;
+    bool dbg_due = (now >= dbg_ms);
+    if (dbg_due) dbg_ms = now + 1000;
+#endif
+
     bind_slots();
 
     for (int f = 0; f < CAN_BRIDGE_FRAMES; f++) {
@@ -102,6 +108,17 @@ void can_bridge_publish(void)
 
         for (int i = 0; i < 4; i++)
             put_slot(&msg.data[i * 2], &s_slots[f * 4 + i]);
+
+#if CAN_BRIDGE_DEBUG
+        if (dbg_due) {
+            ESP_LOGI(TAG, "tx 0x%03X  %6d %6d %6d %6d",
+                     (unsigned)msg.identifier,
+                     (int)(int16_t)(msg.data[0] | (msg.data[1] << 8)),
+                     (int)(int16_t)(msg.data[2] | (msg.data[3] << 8)),
+                     (int)(int16_t)(msg.data[4] | (msg.data[5] << 8)),
+                     (int)(int16_t)(msg.data[6] | (msg.data[7] << 8)));
+        }
+#endif
 
         // Never block the gauge on a full queue. A dropped frame is one
         // 50ms refresh missed, which the subscriber cannot even display.
@@ -167,6 +184,18 @@ bool can_bridge_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
         // rendering as "--" instead of appearing as a real value of nothing.
         *s->field = (q == BRIDGE_NA) ? NAN : (float)q / s->scale;
     }
+
+#if CAN_BRIDGE_DEBUG
+    static int64_t dbg_ms = 0;
+    int64_t now = esp_timer_get_time() / 1000;
+    if (now >= dbg_ms) {
+        dbg_ms = now + 1000;
+        ESP_LOGI(TAG, "rx 0x%03X  %.1f %.1f %.1f %.1f",
+                 (unsigned)id,
+                 *s_slots[f * 4 + 0].field, *s_slots[f * 4 + 1].field,
+                 *s_slots[f * 4 + 2].field, *s_slots[f * 4 + 3].field);
+    }
+#endif
 
     return true;
 }
