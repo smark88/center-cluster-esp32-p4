@@ -1049,8 +1049,17 @@ static void can_mapping_task(void *arg){
         // still needs a broadcast protocol; with CAN_PROTOCOL_NAME "none" the
         // letter stays blank while the number below keeps working.
         {
+            // UNVERIFIED for mode 22 0x1951. This is the broadcast enum from
+            // gm.json; the TCM's PID may number positions differently. Set it
+            // from an OBD_DEBUG capture on gauge one: shift P-R-N-D and note
+            // the raw value logged for each, then reorder this table.
             static const char prndl[] = { 'P', 'N', 'D', 'R' };
-            int sel = (int)can_data.gear_sel;
+
+            // Converting NAN to int is undefined behaviour, and NAN is now what
+            // an unanswered PID looks like -- so check before casting, and show
+            // nothing rather than a letter the transmission never sent.
+            float self = can_data.gear_sel;
+            int sel = isnan(self) ? -1 : (int)self;
             ui_dash_set_gear((sel >= 0 && sel < 4) ? prndl[sel] : 0);
 
             // Engaged gear now comes from the transmission itself over mode
@@ -1071,7 +1080,8 @@ static void can_mapping_task(void *arg){
                              : (now_ms - gear_last_ms) / 1000.0f;
                 gear_last_ms = now_ms;
 
-                int g = (int)can_data.gear_num;
+                float gf = can_data.gear_num;
+                int g = isnan(gf) ? 0 : (int)gf;     // NAN: TCM did not answer
                 if (g < 1 || g > GEAR_COUNT)
                     g = detect_gear(can_data.rpm, can_data.speed, dt);
 
