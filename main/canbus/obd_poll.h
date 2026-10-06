@@ -34,6 +34,13 @@ extern "C" {
 // request goes out per tick so two never collide on the bus.
 #define OBD_POLL_TICK_MS 20
 
+// Log every reply the poller receives -- PID, raw data bytes, decoded value --
+// and every negative response with the PID it rejected. This is how to find
+// out what an ECU actually supports and what an undocumented enum means: turn
+// it on, plug the laptop into this gauge, and watch the console while you
+// change the thing being measured (e.g. move the shifter P-R-N-D-M).
+#define OBD_DEBUG 0
+
 // Functional request address and the ECU reply range.
 #define OBD_REQ_ID    0x7DF
 #define OBD_RESP_LO   0x7E8

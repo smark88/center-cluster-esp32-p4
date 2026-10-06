@@ -3,6 +3,7 @@
 #if OBD_POLL_ENABLE
 
 #include <string.h>
+#include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/twai.h"
@@ -53,7 +54,8 @@ static const obd_pid_t s_pids[] = {
 
     // Engine oil temp, same encoding. Not fitted to every car -- if the ECU
     // does not support it the tile simply stays at "--".
-    { 0x5C, 1,  600, 1.8f, -40.0f, DEST_FIELD, NULL, "oil temp" },
+    { 0x1154, 1,  600, 1.8f, -40.0f, DEST_FIELD, NULL, "oil temp",
+      0x22, OBD_ECM_REQ, OBD_ECU_ID },
 
     // Fuel tank level, A * 100 / 255, already a percentage. This is the only
     // source the fuel arc has in CAN mode: adc_task does not run there, so
@@ -151,6 +153,15 @@ static const obd_pid_t s_pids[] = {
     { 0x1951, 1,  200, 1.0f, 0.0f, DEST_FIELD, NULL, "prndl",
       0x22, OBD_TCM_REQ, OBD_TCM_ID },
 
+#if OBD_DEBUG
+    // Second PRNDL candidate, polled only while diagnosing. It has no target,
+    // so it never touches the display -- OBD_DEBUG just logs what it returns,
+    // side by side with 0x1951, so one session of moving the shifter shows
+    // which PID actually follows the lever and what number each position is.
+    { 0x2889, 1,  200, 1.0f, 0.0f, DEST_FIELD, NULL, "prndl alt",
+      0x22, OBD_TCM_REQ, OBD_TCM_ID },
+#endif
+
     // Knock retard, degrees of timing pulled. On a supercharged motor this is
     // the number worth a tile: it moves before anything else does when the
     // charge temp, fuel or timing is wrong, and it reads a clean zero when
@@ -184,7 +195,7 @@ static void bind_targets(void)
     for (int i = 0; i < PID_COUNT; i++) {
         switch (s_pids[i].pid) {
             case 0x05: s_targets[i] = (float *)&can_data.coolant_temp;   break;
-            case 0x5C: s_targets[i] = (float *)&can_data.oil_temp;       break;
+            case 0x1154: s_targets[i] = (float *)&can_data.oil_temp;     break;
             case 0x2F: s_targets[i] = (float *)&can_data.fuel_level;     break;
             case 0x0C: s_targets[i] = (float *)&can_data.rpm;            break;
             case 0x0D: s_targets[i] = (float *)&can_data.speed;          break;
@@ -200,7 +211,17 @@ static void bind_targets(void)
             case 0x11A6: s_targets[i] = (float *)&can_data.knock_retard; break;
             default:   s_targets[i] = NULL;                              break;
         }
+
+        // can_data starts zeroed, so a PID the ECU never answers used to leave
+        // a plausible-looking 0 on screen -- oil temp read "0" rather than
+        // "--", and an unanswered PRNDL indexed straight to 'P'. NAN is what
+        // the tiles render as "--", so "no answer" now looks like no answer.
+        if (s_targets[i])
+            *s_targets[i] = NAN;
     }
+    // Boost is computed rather than bound, but it has the same problem if MAP
+    // never answers.
+    can_data.boost = NAN;
 }
 
 static void send_request(const obd_pid_t *p)
@@ -261,6 +282,14 @@ bool obd_poll_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
         pid   = ((uint16_t)data[2] << 8) | data[3];
         first = 4;
     } else {
+#if OBD_DEBUG
+        // 7F <service> <reason>. For mode 22 the PID is not echoed, so this
+        // says which service was refused, not which PID -- line it up with
+        // the request that went out just before it.
+        if (data[1] == 0x7F && dlc >= 4)
+            ESP_LOGW(TAG, "0x%03X rejected service 0x%02X, reason 0x%02X",
+                     (unsigned)id, data[2], data[3]);
+#endif
         return true;
     }
 
@@ -295,6 +324,12 @@ bool obd_poll_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
         }
 
         float value = raw * s_pids[i].scale + s_pids[i].offset;
+
+#if OBD_DEBUG
+        ESP_LOGI(TAG, "%-10s pid 0x%04X from 0x%03X  raw %5lu (0x%02lX)  -> %.2f",
+                 s_pids[i].name, (unsigned)pid, (unsigned)id,
+                 (unsigned long)raw, (unsigned long)raw, value);
+#endif
 
         switch (s_pids[i].dest) {
             case DEST_MAP:
