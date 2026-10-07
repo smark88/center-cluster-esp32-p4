@@ -1037,11 +1037,17 @@ static void can_mapping_task(void *arg){
         int64_t now_ms = esp_timer_get_time() / 1000;
 
         // ---------- Drivetrain ----------
-        rpmNow = can_data.rpm;
+        // RPM and speed feed running state -- the needle filter, the
+        // odometer, the gear estimate -- and NAN is sticky there: one NAN
+        // into display += k * (new - display) makes it NAN forever, and the
+        // later (int) cast of that is undefined (on this chip it saturates,
+        // pinning the tach at full scale). Tiles want "--" for a missing
+        // value, but a tach with no reading should just read 0.
+        rpmNow = isnan(can_data.rpm) ? 0.0f : can_data.rpm;
 
         // can_data.speed is already MPH -- every protocol json folds the
         // kph->mph factor into its own scale.
-        g_speed_mph = can_data.speed;
+        g_speed_mph = isnan(can_data.speed) ? 0.0f : can_data.speed;
 
         // Odometer is accumulated in gauge_timer from mph * elapsed time.
 
