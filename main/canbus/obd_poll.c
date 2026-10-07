@@ -132,7 +132,15 @@ static const obd_pid_t s_pids[] = {
     //     { 0x1470, 1, 300, 0.578f, 0.0f, DEST_FIELD, NULL, "oil psi",
     //       0x22, OBD_ECM_REQ, OBD_ECU_ID },
     // and bind 0x1470 to oil_pressure in bind_targets below.
-    { 0x115C, 1,  300, 0.65f, -17.5f, DEST_FIELD, NULL, "oil psi",
+    // CALIBRATED ON THE CAR, which overrides everything above. 115C is the
+    // right PID -- the LS3 candidate 0x1470 does not answer at all on this
+    // ECM -- but its published formula is wrong here. Raw 37 with the engine
+    // stopped is 0 psi by definition; the published (A*0.65)-17.5 made that
+    // 6.5. A second point, ~25 psi hot idle reading 36 on the old formula
+    // (raw ~82), gives a slope of 0.556 psi/count, close to RaceCapture's
+    // 0.578. The zero is certain; the slope rests on one remembered reading
+    // and wants confirming against HP Tuners at idle and at ~2500 rpm.
+    { 0x115C, 1,  300, 0.556f, -20.6f, DEST_FIELD, NULL, "oil psi",
       0x22, OBD_ECM_REQ, OBD_ECU_ID },
 
     // Transmission fluid temp, A - 40 degC, from the TCM rather than the
@@ -160,6 +168,7 @@ static const obd_pid_t s_pids[] = {
     // which PID actually follows the lever and what number each position is.
     { 0x2889, 1,  200, 1.0f, 0.0f, DEST_FIELD, NULL, "prndl alt",
       0x22, OBD_TCM_REQ, OBD_TCM_ID },
+
 #endif
 
     // Knock retard, degrees of timing pulled. On a supercharged motor this is
