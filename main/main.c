@@ -1059,10 +1059,10 @@ static void can_mapping_task(void *arg){
         // still needs a broadcast protocol; with CAN_PROTOCOL_NAME "none" the
         // letter stays blank while the number below keeps working.
         {
-            // UNVERIFIED for mode 22 0x1951. This is the broadcast enum from
-            // gm.json; the TCM's PID may number positions differently. Set it
-            // from an OBD_DEBUG capture on gauge one: shift P-R-N-D and note
-            // the raw value logged for each, then reorder this table.
+            // 0 P, 1 N, 2 D, 3 R -- gm.json's broadcast enum. Gauge one
+            // translates the TCM's own range codes from 0x2889 (P=8 R=7 N=6
+            // D=18, mapped on the car) into this order before publishing, so
+            // the table holds for both sources.
             static const char prndl[] = { 'P', 'N', 'D', 'R' };
 
             // Converting NAN to int is undefined behaviour, and NAN is now what
