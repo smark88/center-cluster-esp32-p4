@@ -1099,7 +1099,7 @@ static void can_mapping_task(void *arg){
                 float gf = can_data.gear_num;
                 int g = isnan(gf) ? 0 : (int)gf;     // NAN: TCM did not answer
                 if (g < 1 || g > GEAR_COUNT)
-                    g = detect_gear(can_data.rpm, can_data.speed, dt);
+                    g = detect_gear(rpmNow, g_speed_mph, dt);
 
                 ui_dash_set_drive_gear((g >= 1 && g <= GEAR_COUNT) ? g : 0);
             }
