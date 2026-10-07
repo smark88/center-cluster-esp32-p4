@@ -82,12 +82,11 @@ static const obd_pid_t s_pids[] = {
     // Manifold absolute pressure, A kPa. Kept raw for the boost maths.
     { 0x0B, 1,  100, 1.0f,          0.0f,   DEST_MAP,   NULL, "MAP" },
 
-    // Commanded equivalence ratio, ((A*256)+B) * 2 / 65535 lambda.
-    // Stoichiometric petrol is 14.7:1, so lambda * 14.7 gives AFR.
-    { 0x44, 2,  200, (2.0f/65535.0f)*14.7f, 0.0f, DEST_FIELD, NULL, "AFR" },
-
-    // Fuel rail gauge pressure, ((A*256)+B) * 10 kPa -> psi.
-    { 0x23, 2,  200, 10.0f*KPA_TO_PSI, 0.0f, DEST_FIELD, NULL, "fuel psi" },
+    // AFR (0x44) and fuel rail pressure (0x23) used to be polled here at 5/s
+    // each. Their tiles became KNOCK and ETHANOL, so nothing displays either,
+    // and on the car the table was asking for ~65 requests/s against a ceiling
+    // of 50 -- those two were a sixth of the load for no output. Their bridge
+    // slots stay, append-only, and now carry "no reading".
 
     // Intake air temp, A - 40 degC. To degF: A * 1.8 - 40.
     { 0x0F, 1,  600, 1.8f,          -40.0f, DEST_FIELD, NULL, "IAT" },
@@ -104,7 +103,9 @@ static const obd_pid_t s_pids[] = {
     // Throttle position, A * 100 / 255 percent. Not on any tile -- carried
     // because knock and gear both only mean something under throttle, and
     // having it costs one slot that was spare anyway.
-    { 0x11, 1,  200, 100.0f/255.0f, 0.0f,   DEST_FIELD, NULL, "throttle" },
+    // 500ms, not 200: nothing displays it, so it should not compete with the
+    // tiles for the 50 requests/s the poller can actually send.
+    { 0x11, 1,  500, 100.0f/255.0f, 0.0f,   DEST_FIELD, NULL, "throttle" },
 
     // ---- GM enhanced, mode 22 ---------------------------------------------
     // Neither of these exists as a standard mode 01 PID, which is why both
@@ -202,8 +203,6 @@ static void bind_targets(void)
             case 0x2F: s_targets[i] = (float *)&can_data.fuel_level;     break;
             case 0x0C: s_targets[i] = (float *)&can_data.rpm;            break;
             case 0x0D: s_targets[i] = (float *)&can_data.speed;          break;
-            case 0x44: s_targets[i] = (float *)&can_data.air_fuel_ratio; break;
-            case 0x23: s_targets[i] = (float *)&can_data.fuel_pressure;  break;
             case 0x0F: s_targets[i] = (float *)&can_data.air_temp;       break;
             case 0x52: s_targets[i] = (float *)&can_data.fuel_comp;      break;
             case 0x11: s_targets[i] = (float *)&can_data.throttle_pct;   break;
@@ -373,12 +372,27 @@ static void obd_poll_task(void *arg)
         int64_t now = esp_timer_get_time() / 1000;
 
         // One request per tick at most, so two PIDs never collide on the bus.
+        //
+        // Send the MOST OVERDUE PID, not the first due one in table order.
+        // The tick caps the poller at 50 requests/s, and when the table asks
+        // for more than that, first-in-order puts the whole shortfall on the
+        // last entries: on the car knock retard, near the bottom, got 0.2/s
+        // against 5 asked for, and PRNDL 1/s. Most-overdue spreads any
+        // shortfall evenly instead of starving whatever happens to be last.
+        int     pick  = -1;
+        int64_t worst = 0;
         for (int i = 0; i < PID_COUNT; i++) {
-            if (now >= s_due_ms[i]) {
-                send_request(&s_pids[i]);
-                s_due_ms[i] = now + s_pids[i].period_ms;
-                break;
+            if (now < s_due_ms[i])
+                continue;
+            int64_t late = now - s_due_ms[i];
+            if (pick < 0 || late > worst) {
+                pick  = i;
+                worst = late;
             }
+        }
+        if (pick >= 0) {
+            send_request(&s_pids[pick]);
+            s_due_ms[pick] = now + s_pids[pick].period_ms;
         }
         vTaskDelay(pdMS_TO_TICKS(OBD_POLL_TICK_MS));
     }
