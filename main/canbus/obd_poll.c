@@ -80,6 +80,16 @@ static const obd_pid_t s_pids[] = {
     // nodes asking separately, and three of the PIDs were duplicated between
     // them anyway. See canbus/can_bridge.h.
 
+    // Ahead of 0x0B on purpose: with every PID due at boot, ties go to the
+    // earlier entry, so the range is asked for before the first MAP reading
+    // instead of the first second showing -5 psi on an unscaled sensor.
+    //
+    // Maximum values: byte D is full-scale MAP in 10 kPa units. Fixed for the
+    // life of the ECU, so it is asked for rarely. Until it answers, or on an
+    // ECU that does not support it -- a naturally aspirated FR-S, say -- MAP
+    // stays unscaled, which is exactly right for a 255 kPa sensor.
+    { 0x4F, 1, 5000, 1.0f,          0.0f,   DEST_MAP_RANGE, NULL, "MAP range" },
+
     // Manifold absolute pressure. Plain A kPa only on a sensor that tops out
     // at 255 kPa. A boosted engine carries a higher range sensor, and J1979
     // then scales 0x0B to it and publishes the full scale in 0x4F below:
@@ -88,11 +98,6 @@ static const obd_pid_t s_pids[] = {
     // = 102 kPa is the true, atmospheric reading.
     { 0x0B, 1,  100, 1.0f,          0.0f,   DEST_MAP,   NULL, "MAP" },
 
-    // Maximum values: byte D is full-scale MAP in 10 kPa units. Fixed for the
-    // life of the ECU, so it is asked for rarely. Until it answers, or on an
-    // ECU that does not support it -- a naturally aspirated FR-S, say -- MAP
-    // stays unscaled, which is exactly right for a 255 kPa sensor.
-    { 0x4F, 1, 5000, 1.0f,          0.0f,   DEST_MAP_RANGE, NULL, "MAP range" },
 
     // AFR (0x44) and fuel rail pressure (0x23) used to be polled here at 5/s
     // each. Their tiles became KNOCK and ETHANOL, so nothing displays either,
@@ -354,11 +359,19 @@ bool obd_poll_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
                 uint8_t d = data[first + 3];
                 if (d > 0)
                     s_map_kpa_per_count = (d * 10.0f) / 255.0f;
+#if OBD_DEBUG
+                ESP_LOGI(TAG, "MAP full scale byte D = %u -> %u kPa, %.3f kPa/count",
+                         d, d * 10u, s_map_kpa_per_count);
+#endif
                 break;
             }
             case DEST_MAP:
                 s_map_kpa = raw * s_map_kpa_per_count;
                 can_data.boost = (s_map_kpa - s_baro_kpa) * KPA_TO_PSI;
+#if OBD_DEBUG
+                ESP_LOGI(TAG, "MAP %.1f kPa, baro %.1f kPa -> boost %.2f psi",
+                         s_map_kpa, s_baro_kpa, can_data.boost);
+#endif
                 break;
             case DEST_BARO:
                 s_baro_kpa = value;
