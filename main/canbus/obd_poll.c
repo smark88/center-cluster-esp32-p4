@@ -19,6 +19,7 @@ typedef enum {
     DEST_FIELD,      // straight into a can_data field
     DEST_MAP,        // stash for the boost calculation
     DEST_BARO,
+    DEST_PRNDL,      // TCM range code, remapped -- see the 0x2889 entry
 } obd_dest_t;
 
 typedef struct {
@@ -155,21 +156,14 @@ static const obd_pid_t s_pids[] = {
     { 0x199A, 1,  200, 1.0f, 0.0f, DEST_FIELD, NULL, "gear",
       0x22, OBD_TCM_REQ, OBD_TCM_ID },
 
-    // PRNDL. The enum this returns is NOT known to match the broadcast one
-    // gm.json decodes, which is 0 Park, 1 Neutral, 2 Drive, 3 Reverse. If the
-    // letter is wrong, that mapping in can_mapping_task is what to change.
-    { 0x1951, 1,  200, 1.0f, 0.0f, DEST_FIELD, NULL, "prndl",
+    // PRNDL, from the transmission range code. Mapped on the car with the
+    // shifter: this TCM rejects 0x1951 outright (7F 22 31, out of range), and
+    // 0x2889 answers with its own codes -- P=8 R=7 N=6 D=18. They are
+    // translated in obd_poll_handle_frame to the 0 P, 1 N, 2 D, 3 R order the
+    // display and gm.json's broadcast enum already use, so either source
+    // drives the same letter table. Anything else reads as no position.
+    { 0x2889, 1,  200, 1.0f, 0.0f, DEST_PRNDL, NULL, "prndl",
       0x22, OBD_TCM_REQ, OBD_TCM_ID },
-
-#if OBD_DEBUG
-    // Second PRNDL candidate, polled only while diagnosing. It has no target,
-    // so it never touches the display -- OBD_DEBUG just logs what it returns,
-    // side by side with 0x1951, so one session of moving the shifter shows
-    // which PID actually follows the lever and what number each position is.
-    { 0x2889, 1,  200, 1.0f, 0.0f, DEST_FIELD, NULL, "prndl alt",
-      0x22, OBD_TCM_REQ, OBD_TCM_ID },
-
-#endif
 
     // Knock retard, degrees of timing pulled. On a supercharged motor this is
     // the number worth a tile: it moves before anything else does when the
@@ -216,7 +210,7 @@ static void bind_targets(void)
             case 0x115C: s_targets[i] = (float *)&can_data.oil_pressure; break;
             case 0x1940: s_targets[i] = (float *)&can_data.trans_temp;   break;
             case 0x199A: s_targets[i] = (float *)&can_data.gear_num;     break;
-            case 0x1951: s_targets[i] = (float *)&can_data.gear_sel;     break;
+            case 0x2889: s_targets[i] = (float *)&can_data.gear_sel;     break;
             case 0x11A6: s_targets[i] = (float *)&can_data.knock_retard; break;
             default:   s_targets[i] = NULL;                              break;
         }
@@ -351,6 +345,18 @@ bool obd_poll_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
             case DEST_FIELD:
                 if (s_targets[i]) *s_targets[i] = value;
                 break;
+            case DEST_PRNDL: {
+                float pos;
+                switch (raw) {
+                    case 8:  pos = 0.0f; break;   // P
+                    case 6:  pos = 1.0f; break;   // N
+                    case 18: pos = 2.0f; break;   // D
+                    case 7:  pos = 3.0f; break;   // R
+                    default: pos = NAN;  break;   // between positions, or M/L
+                }
+                if (s_targets[i]) *s_targets[i] = pos;
+                break;
+            }
         }
         return true;
     }
