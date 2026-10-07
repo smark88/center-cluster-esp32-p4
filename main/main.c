@@ -74,6 +74,11 @@
 //--------------------------//
 
 
+// Gauge-two telemetry link. UART1 TX is GPIO37, which is also the console
+// UART0 TX pin, so turning this on destroys every log line the dash emits.
+// Off while CAN is being brought up; set to 1 to feed gauge two again.
+#define GAUGE_UART_ENABLE 0
+
 #define UART_PORT UART_NUM_1
 #define UART1_PORT UART_NUM_2
 #define GAUGE_PKT_SOF   0xA5
@@ -917,8 +922,13 @@ static void adc_task(void *arg) {
             uint16_t crc = crc16_ccitt(&buf[1], GAUGE_PKT_LEN - 3);
             memcpy(&buf[GAUGE_PKT_LEN - 2], &crc, 2);
 
+#if GAUGE_UART_ENABLE
+            // Only when the driver was installed -- with the link off,
+            // uart_init never runs and every write fails with a logged
+            // error, about a hundred a second, which buries the console.
             uart_write_bytes(UART_PORT, buf, GAUGE_PKT_LEN);
             uart_write_bytes(UART1_PORT, buf, GAUGE_PKT_LEN);
+#endif
         }
 
         // Optional logging
@@ -1033,8 +1043,13 @@ static void can_mapping_task(void *arg){
             uint16_t crc = crc16_ccitt(&buf[1], GAUGE_PKT_LEN - 3);
             memcpy(&buf[GAUGE_PKT_LEN - 2], &crc, 2);
 
+#if GAUGE_UART_ENABLE
+            // Only when the driver was installed -- with the link off,
+            // uart_init never runs and every write fails with a logged
+            // error, about a hundred a second, which buries the console.
             uart_write_bytes(UART_PORT, buf, GAUGE_PKT_LEN);
             uart_write_bytes(UART1_PORT, buf, GAUGE_PKT_LEN);
+#endif
         }
 
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -1088,11 +1103,6 @@ void app_main(void) {
 
     ui_init();
     lv_timer_create(gauge_timer, GAUGE_TIMER_MS, NULL);
-
-// Gauge-two telemetry link. UART1 TX is GPIO37, which is also the console
-// UART0 TX pin, so turning this on destroys every log line the dash emits.
-// Off while CAN is being brought up; set to 1 to feed gauge two again.
-#define GAUGE_UART_ENABLE 0
 
 #if GAUGE_UART_ENABLE && !CAN_SCAN_MODE && !CAN_SELFTEST_MODE && !CAN_PROBE_MODE
     // UART1 TX is GPIO37, which is also the console UART0 TX pin, so once this
