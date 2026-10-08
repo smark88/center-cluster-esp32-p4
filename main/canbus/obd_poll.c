@@ -155,11 +155,11 @@ static const obd_pid_t s_pids[] = {
     // right PID -- the LS3 candidate 0x1470 does not answer at all on this
     // ECM -- but its published formula is wrong here. Raw 37 with the engine
     // stopped is 0 psi by definition; the published (A*0.65)-17.5 made that
-    // 6.5. A second point, ~25 psi hot idle reading 36 on the old formula
-    // (raw ~82), gives a slope of 0.556 psi/count, close to RaceCapture's
-    // 0.578. The zero is certain; the slope rests on one remembered reading
-    // and wants confirming against HP Tuners at idle and at ~2500 rpm.
-    { 0x115C, 1,  300, 0.556f, -20.6f, DEST_FIELD, NULL, "oil psi",
+    // 6.5. The slope is from a side-by-side with HP Tuners, engine running
+    // hot: HPT 29 psi while 0.556/count read 26 (raw ~84). Through the fixed
+    // zero that is 29 / (84 - 37) = 0.625 psi/count, i.e. psi = (A - 37) * 0.625.
+    // Wants one more check at ~2500 rpm to confirm the line holds up high.
+    { 0x115C, 1,  300, 0.625f, -23.125f, DEST_FIELD, NULL, "oil psi",
       0x22, OBD_ECM_REQ, OBD_ECU_ID },
 
     // Transmission fluid temp, A - 40 degC, from the TCM rather than the
