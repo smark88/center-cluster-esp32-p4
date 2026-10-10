@@ -54,13 +54,10 @@ static const obd_pid_t s_pids[] = {
     // Engine coolant temp, A - 40 degC. To degF: A * 1.8 - 40.
     { 0x05, 1,  600, 1.8f, -40.0f, DEST_FIELD, NULL, "coolant" },
 
-    // Engine oil temp from the sensor, standard J1979 PID 0x5C, A - 40 degC.
-    // HP Tuners shows two on the car: "Oil Temp" (the sensor, 180) and "Oil
-    // Temp Calc" (the ECM's model, 190). Mode 22 0x1154 turned out to be the
-    // calc, so it is NOT used: the tile shows the sensor or "--", never the
-    // model standing in for it. If 0x5C does not answer, the sensor value
-    // needs another PID, not 0x1154.
-    { 0x5C, 1,  600, 1.8f, -40.0f, DEST_FIELD, NULL, "oil temp" },
+    // Engine oil temp, same encoding. Not fitted to every car -- if the ECU
+    // does not support it the tile simply stays at "--".
+    { 0x1154, 1,  600, 1.8f, -40.0f, DEST_FIELD, NULL, "oil temp",
+      0x22, OBD_ECM_REQ, OBD_ECU_ID },
 
     // Fuel tank level, A * 100 / 255, already a percentage. This is the only
     // source the fuel arc has in CAN mode: adc_task does not run there, so
@@ -221,7 +218,7 @@ static void bind_targets(void)
     for (int i = 0; i < PID_COUNT; i++) {
         switch (s_pids[i].pid) {
             case 0x05: s_targets[i] = (float *)&can_data.coolant_temp;   break;
-            case 0x5C: s_targets[i] = (float *)&can_data.oil_temp;       break;
+            case 0x1154: s_targets[i] = (float *)&can_data.oil_temp;     break;
             case 0x2F: s_targets[i] = (float *)&can_data.fuel_level;     break;
             case 0x0C: s_targets[i] = (float *)&can_data.rpm;            break;
             case 0x0D: s_targets[i] = (float *)&can_data.speed;          break;
