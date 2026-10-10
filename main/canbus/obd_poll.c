@@ -54,8 +54,10 @@ static const obd_pid_t s_pids[] = {
     // Engine coolant temp, A - 40 degC. To degF: A * 1.8 - 40.
     { 0x05, 1,  600, 1.8f, -40.0f, DEST_FIELD, NULL, "coolant" },
 
-    // Engine oil temp, same encoding. Not fitted to every car -- if the ECU
-    // does not support it the tile simply stays at "--".
+    // Engine oil temp, same encoding. On the car this is HP Tuners' "Oil Temp
+    // Calc" (the ECM's model, ~10F above the sensor's "Oil Temp") -- kept on
+    // purpose, as it is what the factory gauges show. The sensor's standard
+    // PID 0x5C is not answered by this ECM.
     { 0x1154, 1,  600, 1.8f, -40.0f, DEST_FIELD, NULL, "oil temp",
       0x22, OBD_ECM_REQ, OBD_ECU_ID },
 
