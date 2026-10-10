@@ -113,11 +113,13 @@ static const obd_pid_t s_pids[] = {
     // Barometric pressure, A kPa. Also raw.
     { 0x33, 1, 5000, 1.0f,          0.0f,   DEST_BARO,  NULL, "baro" },
 
-    // Ethanol content, A * 100 / 255 percent. This is standard J1979, not a
-    // GM enhanced PID, so no mode 22 is needed -- a flex-fuel car answers it
-    // and anything else returns a negative response and the tile stays "--".
-    // Blend only changes when fuel is added, so it can idle in the background.
-    { 0x52, 1, 5000, 100.0f/255.0f, 0.0f,   DEST_FIELD, NULL, "ethanol" },
+    // Ethanol content, A * 100 / 255 percent. The standard J1979 mode 01 PID
+    // 0x52 is not answered on this car even with flex fuel enabled in the
+    // tune (HP Tuners showed 9.8% while the tile sat at "--"). GM serves the
+    // same value as mode 22 DID 0x0052. Blend only changes when fuel is
+    // added, so it can idle in the background.
+    { 0x0052, 1, 5000, 100.0f/255.0f, 0.0f, DEST_FIELD, NULL, "ethanol",
+      0x22, OBD_ECM_REQ, OBD_ECU_ID },
 
     // Throttle position, A * 100 / 255 percent. Not on any tile -- carried
     // because knock and gear both only mean something under throttle, and
