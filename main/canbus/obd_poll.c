@@ -21,6 +21,7 @@ typedef enum {
     DEST_MAP_RANGE,  // 0x4F: full-scale MAP, which rescales 0x0B
     DEST_BARO,
     DEST_PRNDL,      // TCM range code, remapped -- see the 0x2889 entry
+    DEST_IAT2,       // 0x0068: [support bits][IAT1][IAT2], takes byte C
 } obd_dest_t;
 
 typedef struct {
@@ -109,6 +110,13 @@ static const obd_pid_t s_pids[] = {
 
     // Intake air temp, A - 40 degC. To degF: A * 1.8 - 40.
     { 0x0F, 1,  600, 1.8f,          -40.0f, DEST_FIELD, NULL, "IAT" },
+
+    // IAT sensor 2, after the supercharger. J1979 PID 0x68 carries a support
+    // bitmap then sensor 1 and sensor 2, each A - 40 degC. Asked through mode
+    // 22 as 0x0068 because this ECM ignored mode 01 0x52 but answered 22 0052.
+    // Unconfirmed on the car: "--" means it is not served here.
+    { 0x0068, 1, 1000, 1.8f, -40.0f, DEST_IAT2, NULL, "IAT2",
+      0x22, OBD_ECM_REQ, OBD_ECU_ID },
 
     // Barometric pressure, A kPa. Also raw.
     { 0x33, 1, 5000, 1.0f,          0.0f,   DEST_BARO,  NULL, "baro" },
@@ -216,6 +224,9 @@ static float s_map_kpa  = 101.3f;
 // kPa per count of 0x0B. 1.0 until 0x4F reports a larger full scale.
 static float s_map_kpa_per_count = 1.0f;
 static float s_baro_kpa = 101.3f;
+static volatile bool s_paused;
+
+void obd_poll_pause(bool paused) { s_paused = paused; }
 
 static void bind_targets(void)
 {
@@ -234,6 +245,7 @@ static void bind_targets(void)
             case 0x199A: s_targets[i] = (float *)&can_data.gear_num;     break;
             case 0x2889: s_targets[i] = (float *)&can_data.gear_sel;     break;
             case 0x11A6: s_targets[i] = (float *)&can_data.knock_retard; break;
+            case 0x0068: s_targets[i] = (float *)&can_data.air_temp2;    break;
             default:   s_targets[i] = NULL;                              break;
         }
 
@@ -383,6 +395,12 @@ bool obd_poll_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
             case DEST_FIELD:
                 if (s_targets[i]) *s_targets[i] = value;
                 break;
+            case DEST_IAT2:
+                // Byte C, and only if the support bits say sensor 2 exists.
+                if (dlc >= first + 3 && s_targets[i])
+                    *s_targets[i] = (data[first] & 0x02)
+                        ? data[first + 2] * 1.8f - 40.0f : NAN;
+                break;
             case DEST_PRNDL: {
                 float pos;
                 switch (raw) {
@@ -429,7 +447,7 @@ static void obd_poll_task(void *arg)
                 worst = late;
             }
         }
-        if (pick >= 0) {
+        if (pick >= 0 && !s_paused) {
             send_request(&s_pids[pick]);
             s_due_ms[pick] = now + s_pids[pick].period_ms;
         }
@@ -446,6 +464,7 @@ void obd_poll_start(void)
 
 #include <stdbool.h>
 void obd_poll_start(void) {}
+void obd_poll_pause(bool paused) { (void)paused; }
 bool obd_poll_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc)
 {
     (void)id; (void)data; (void)dlc;

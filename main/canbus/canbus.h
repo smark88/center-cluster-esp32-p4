@@ -36,6 +36,7 @@ typedef struct{
     float gear_num;         // engaged gear, 1..8
     float knock_retard;     // degrees of timing pulled
     float throttle_pct;     // 0-100, not displayed -- carried for logic
+    float air_temp2;        // degF, IAT sensor 2 (after the supercharger)
 } can_dash_data_t;
 
 

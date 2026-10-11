@@ -67,6 +67,10 @@ void obd_poll_start(void);
 // was an OBD reply and has been consumed.
 bool obd_poll_handle_frame(uint32_t id, const uint8_t *data, uint8_t dlc);
 
+// Stop sending requests while something else talks to the modules (reading
+// trouble codes), so a poll never lands in the middle of a multi-frame answer.
+void obd_poll_pause(bool paused);
+
 #ifdef __cplusplus
 }
 #endif
